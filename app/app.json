@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Worldweave Tales",
+    "slug": "worldweave-tales",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "scheme": "worldweave",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.worldweavetales.app"
+    },
+    "android": {
+      "package": "com.worldweavetales.app"
+    },
+    "extra": {
+      "proxyBaseUrl": "http://localhost:8787"
+    }
+  }
+}

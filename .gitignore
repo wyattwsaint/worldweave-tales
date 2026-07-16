@@ -1,0 +1,30 @@
+# deps
+node_modules/
+# builds
+dist/
+build/
+web-build/
+# expo
+.expo/
+.expo-shared/
+*.tsbuildinfo
+# env / secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+# native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+# logs
+*.log
+npm-debug.log*
