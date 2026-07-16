@@ -37,17 +37,84 @@ export class StubImageProvider implements ImageProvider {
   }
 }
 
-/** Recraft V3 adapter — turnkey named-style lock. TODO: wire real API calls. */
+/**
+ * MVP art look: the world's ONE locked Recraft style. providerStyleRef encodes
+ * WHICH lock mode to use (see parseStyleRef):
+ *   - "sub:digital_illustration/freehand_details" -> recraftv3 style+substyle
+ *      (the detailed pen/pencil looks live in V3's substyle enum; validated to
+ *      produce imaginative, detailed single-entity card portraits)
+ *   - "id:<uuid>"  -> custom style_id (reference-trained; strongest fidelity,
+ *      the follow-up for a truly locked graphite palette)
+ * NOTE: Recraft v4/v4.1 dropped the `style` param entirely, so there is no
+ * "named style" API mode — curated looks are only reachable as style_ids.
+ */
+const PENCIL_STYLE_REF = "sub:digital_illustration/freehand_details";
+/** Portrait 3:4 card size — supported by recraftv3. */
+const CARD_SIZE = "1024x1365";
+
+type StyleLock =
+  | { mode: "sub"; model: string; body: { style: string; substyle: string } }
+  | { mode: "id"; model: string; body: { style_id: string } };
+
+/** Decode a providerStyleRef into the model + request fields for the lock mode. */
+export function parseStyleRef(ref: string): StyleLock {
+  if (ref.startsWith("sub:")) {
+    const [style, substyle] = ref.slice(4).split("/", 2);
+    if (!style || !substyle) {
+      throw new Error(`Malformed style ref "${ref}" (want "sub:<style>/<substyle>")`);
+    }
+    return { mode: "sub", model: "recraftv3", body: { style, substyle } };
+  }
+  if (ref.startsWith("id:")) {
+    return { mode: "id", model: "recraftv3", body: { style_id: ref.slice(3) } };
+  }
+  throw new Error(`Unrecognized providerStyleRef "${ref}" (want sub:/id: prefix)`);
+}
+
+/** Pull the ordered image URLs out of a Recraft generations response. */
+export function parseImageRefs(body: unknown): string[] {
+  const data = (body as { data?: Array<{ url?: string }> })?.data;
+  if (!Array.isArray(data)) throw new Error("Recraft response missing data[]");
+  return data.map((d, i) => {
+    if (!d?.url) throw new Error(`Recraft response data[${i}] missing url`);
+    return d.url;
+  });
+}
+
+/**
+ * Recraft adapter. Locks one world style (built-in V3 substyle by default, or a
+ * custom style_id if the world carries one) and generates card-portrait variants.
+ */
 export class RecraftImageProvider implements ImageProvider {
   async ensureStyle(style: ArtStyle) {
-    // TODO: POST to `${config.recraft.baseUrl}/styles` with the pencil-sketch
-    // reference to create/fetch a reusable style id. Auth: config.recraft.apiKey.
-    if (style.providerStyleRef) return { providerStyleRef: style.providerStyleRef };
-    throw new Error("RecraftImageProvider.ensureStyle not implemented yet");
+    // A world may already carry a Recraft style_id (custom style path). Otherwise
+    // the MVP locks the default detailed-pen substyle for every card.
+    return { providerStyleRef: style.providerStyleRef ?? PENCIL_STYLE_REF };
   }
-  async generateCardVariants(_input: { providerStyleRef: string; prompt: string; count: number }) {
-    // TODO: POST to `${config.recraft.baseUrl}/images/generations` with style_id.
-    throw new Error("RecraftImageProvider.generateCardVariants not implemented yet");
+
+  async generateCardVariants(input: { providerStyleRef: string; prompt: string; count: number }) {
+    const lock = parseStyleRef(input.providerStyleRef);
+    const res = await fetch(`${config.recraft.baseUrl}/images/generations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.recraft.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: input.prompt,
+        model: lock.model,
+        size: CARD_SIZE,
+        n: input.count,
+        response_format: "url",
+        ...lock.body,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Recraft ${res.status} ${res.statusText}: ${detail.slice(0, 500)}`);
+    }
+    const imageRefs = parseImageRefs(await res.json());
+    return { imageRefs };
   }
 }
 
