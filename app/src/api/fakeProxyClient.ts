@@ -31,7 +31,11 @@ export class FakeProxyClient {
     const beats: Beat[] = INVARIANT_SPINE.map((spineBeat) => ({
       spineBeat,
       text: `[${spineBeat}] A gentle, safe telling for the "${describeTeachingPoint(answers)}" lesson.`,
-      dealtCardIds: ["hero", "companion-fern", "place-willowmere"],
+      // The villain enters when the virtue is tested and is present as good triumphs.
+      dealtCardIds:
+        spineBeat === "virtue-tested" || spineBeat === "good-triumphs"
+          ? ["hero", "villain", "companion-fern", "place-willowmere"]
+          : ["hero", "companion-fern", "place-willowmere"],
     }));
 
     const pendingCardChoices: GeneratedCardChoice[] = [

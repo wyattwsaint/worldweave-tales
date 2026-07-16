@@ -55,7 +55,7 @@ export default function WizardScreen() {
         answers,
       };
       const response = await new FakeProxyClient().generateArc(req);
-      navigate({ screen: "cardpick", params: { response } });
+      navigate({ screen: "cardpick", params: { response, answers } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

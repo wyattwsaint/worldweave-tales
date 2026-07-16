@@ -12,7 +12,7 @@ import { useNav, type CardPickParams } from "../nav/NavContext";
  */
 export default function CardPickScreen({ params }: { params: CardPickParams }) {
   const { navigate } = useNav();
-  const { response } = params;
+  const { response, answers } = params;
   const choices = response.pendingCardChoices;
 
   const [picks, setPicks] = useState<Record<string, string>>({});
@@ -22,7 +22,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
   function onConfirm() {
     const now = new Date();
     const pickedCards: Card[] = choices.map((choice) => {
-      const base = draftCard(choice);
+      const base = draftCard(choice, answers.choices[choice.role]);
       return applyCardPick(base, picks[choice.role], now);
     });
     const cards: Card[] = [...pickedCards, ...response.newCanonCards];
@@ -71,12 +71,13 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
 }
 
 /** Build a not-yet-canonized Card for a pending choice. applyCardPick locks it. */
-function draftCard(choice: GeneratedCardChoice): Card {
+function draftCard(choice: GeneratedCardChoice, chosenName?: string): Card {
   const role: CardRole = choice.role;
+  const name = chosenName?.trim() || role.charAt(0).toUpperCase() + role.slice(1);
   return {
     entityId: role, // matches the beat dealtCardIds ("hero"/"villain")
     role,
-    canonName: role.charAt(0).toUpperCase() + role.slice(1),
+    canonName: name,
     traits: [],
     appearanceNote: `The chosen ${role}.`,
     lockedImageRef: "", // set by applyCardPick from the tapped variant

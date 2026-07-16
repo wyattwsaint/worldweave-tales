@@ -37,6 +37,12 @@ describe("FakeProxyClient", () => {
     expect(res.arc.beats.map((b) => b.spineBeat)).toEqual([...INVARIANT_SPINE]);
   });
 
+  it("deals the villain in at least one beat so the picked villain art is shown", async () => {
+    const res = await new FakeProxyClient().generateArc(req());
+    const dealsVillain = res.arc.beats.some((b) => b.dealtCardIds.includes("villain"));
+    expect(dealsVillain).toBe(true);
+  });
+
   it("canonizes at least one non-hero/villain card", async () => {
     const res = await new FakeProxyClient().generateArc(req());
     expect(res.newCanonCards.length).toBeGreaterThanOrEqual(1);

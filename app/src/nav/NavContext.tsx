@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { Arc, Card, GenerateArcResponse } from "@wwt/domain";
+import type { Arc, Card, GenerateArcResponse, WizardAnswers } from "@wwt/domain";
 
 /**
  * Tiny hand-rolled navigator. No external nav library — just a discriminated
@@ -17,6 +17,8 @@ export type Screen = NavState["screen"];
 
 export interface CardPickParams {
   response: GenerateArcResponse;
+  /** The wizard answers, so canonized cards can carry the parent's chosen names. */
+  answers: WizardAnswers;
 }
 
 export interface ViewerParams {
