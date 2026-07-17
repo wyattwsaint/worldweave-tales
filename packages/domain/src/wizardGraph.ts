@@ -18,7 +18,7 @@ import {
   type AgeBand,
   type ArcShape,
   type Tier,
-} from "./index";
+} from "./catalog";
 
 // ---------------------------------------------------------------------------
 // RawWizardPicks — mirrors app/src/flow/buildWizardAnswers.ts. Domain cannot
