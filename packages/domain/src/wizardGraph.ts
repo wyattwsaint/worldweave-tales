@@ -256,7 +256,20 @@ export function assembleRawPicks(answers: NodeAnswers): RawWizardPicks {
   const tier = answers.tier as Tier;
   const raw: RawWizardPicks = { tier, ageBand: answers.ageBand as AgeBand, choices: {} };
 
-  for (const node of getVisibleNodes(tier, answers)) {
+  const visible = getVisibleNodes(tier, answers);
+
+  // A present situation must win over a merely-DEFAULT virtue: buildWizardAnswers'
+  // teaching resolution is "virtue wins if non-empty", so if the virtue node's
+  // static default fired it would silently drop a Solid/Epic parent's free-text
+  // situation (SPEC decision 26). An EXPLICIT virtue pick still wins, per the
+  // locked virtue-wins rule — only the default yields.
+  const situationNode = visible.find(
+    (n) => n.binding.target === "teaching" && n.binding.part === "situation",
+  );
+  const situationPresent =
+    situationNode !== undefined && nonEmptyString(resolveValue(situationNode, answers)) !== undefined;
+
+  for (const node of visible) {
     const value = resolveValue(node, answers);
     if (value === undefined) continue;
 
@@ -288,8 +301,10 @@ export function assembleRawPicks(answers: NodeAnswers): RawWizardPicks {
       case "teaching": {
         switch (node.binding.part) {
           case "virtue": {
+            const explicit = answers[node.id] !== undefined;
             const s = nonEmptyString(value);
-            if (s) raw.virtue = s;
+            // Default virtue yields to a present situation; explicit pick wins.
+            if (s && (explicit || !situationPresent)) raw.virtue = s;
             break;
           }
           case "situation": {

@@ -170,6 +170,37 @@ describe("assembleRawPicks — routing", () => {
     expect(raw.situation).toBe("starting a new school");
   });
 
+  it("does not apply the DEFAULT virtue when a situation free-text is present (situation must win)", () => {
+    // Solid/Epic parent free-texts a situation but never taps a virtue chip.
+    // The virtue node's default must NOT fire, else buildWizardAnswers' virtue-wins
+    // rule silently drops the situation (SPEC decision 26 — Epic free-text path).
+    const solid = assembleRawPicks({
+      tier: "solid",
+      ageBand: "preschool",
+      situation: "moving to a new town",
+    });
+    expect(solid.virtue).toBeUndefined();
+    expect(solid.situation).toBe("moving to a new town");
+
+    const epic = assembleRawPicks({
+      tier: "epic",
+      ageBand: "early-reader",
+      situation: "a friend moved away",
+    });
+    expect(epic.virtue).toBeUndefined();
+    expect(epic.situation).toBe("a friend moved away");
+  });
+
+  it("an EXPLICIT virtue still wins even when a situation is also given (locked virtue-wins rule)", () => {
+    const raw = assembleRawPicks({
+      tier: "epic",
+      ageBand: "early-reader",
+      virtue: "honesty",
+      situation: "a friend moved away",
+    });
+    expect(raw.virtue).toBe("honesty");
+  });
+
   it("maps directness dial to heavy boolean", () => {
     const explicit = assembleRawPicks({
       tier: "epic",
