@@ -1,64 +1,74 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
-  AGE_BANDS,
-  ARC_SHAPES,
-  CURATED_VIRTUES,
-  TIERS,
-  type AgeBand,
-  type ArcShape,
+  assembleRawPicks,
+  getVisibleNodes,
   type GenerateArcRequest,
+  type NodeAnswers,
   type Tier,
+  type WizardNode,
 } from "@wwt/domain";
 import { buildWizardAnswers, type RawWizardPicks } from "../flow/buildWizardAnswers";
 import { FakeProxyClient } from "../api/fakeProxyClient";
 import { useNav } from "../nav/NavContext";
 
-const TIER_NAMES = Object.keys(TIERS) as Tier[];
-const AGE_NAMES = Object.keys(AGE_BANDS) as AgeBand[];
-
 /**
- * MINIMAL fixed-question wizard (not the tier-scaled tree — that's a later
- * slice). Collects a fixed set of picks, normalizes via buildWizardAnswers,
- * generates an arc with the fake client, then routes to card-pick.
+ * GENERIC, data-driven wizard. Instead of hand-wiring a fixed set of fields, it
+ * renders whatever {@link getVisibleNodes} returns for the current tier + the
+ * answers gathered so far, one control per node `kind`. Because visibility is
+ * recomputed every render, changing the tier (or, once threads exist, picking a
+ * thread) reactively reveals/hides nodes.
+ *
+ * On submit it reduces the answers to {@link RawWizardPicks} via the domain
+ * assembler, stamps a fresh worldId (or, for a continued thread, the thread's
+ * worldId — no thread surface exists yet, so that branch is inert), then reuses
+ * the unchanged buildWizardAnswers -> FakeProxyClient -> Card-Pick pipeline.
  */
 export default function WizardScreen() {
   const { navigate } = useNav();
 
-  const [tier, setTier] = useState<Tier>("beginner");
-  const [ageBand, setAgeBand] = useState<AgeBand>("preschool");
-  const [shape, setShape] = useState<ArcShape>("quest");
-  const [virtue, setVirtue] = useState<string>(CURATED_VIRTUES[0]);
-  const [closingVerseEnabled, setClosingVerseEnabled] = useState(false);
-  const [world, setWorld] = useState("");
-  const [hero, setHero] = useState("");
-  const [villain, setVillain] = useState("");
+  // A single NodeAnswers bag keyed by node id — NOT one useState per field.
+  // Seed the two required nodes so Beginner is completable in a couple of taps,
+  // and flag that no saved threads are on offer (keeps thread-pick hidden).
+  const [answers, setAnswers] = useState<NodeAnswers>({
+    tier: "beginner",
+    ageBand: "preschool",
+    __hasThreads: false,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const tier = (answers.tier as Tier | undefined) ?? "beginner";
+  const visibleNodes = useMemo(() => getVisibleNodes(tier, answers), [tier, answers]);
+
+  function setAnswer(id: string, value: string | boolean | undefined) {
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+  }
+
+  // Required nodes must have an effective value before submit is allowed.
+  const canSubmit = visibleNodes
+    .filter((n) => n.required)
+    .every((n) => resolveValue(n, answers) !== undefined && resolveValue(n, answers) !== "");
+
   async function onSubmit() {
+    if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
-      const raw: RawWizardPicks = {
-        tier,
-        ageBand,
-        shape,
-        virtue,
-        closingVerseEnabled,
-        choices: { world, hero, villain },
-        // A brand-new story is its own Storyworld; mint a fresh unique id so
-        // successive stories don't clobber each other in the store.
-        worldId: newWorldId(),
-      };
-      const answers = buildWizardAnswers(raw);
+      const raw: RawWizardPicks = assembleRawPicks(answers);
+      // A continued thread keeps its world; a brand-new story mints a fresh id
+      // so successive stories never clobber one another (B2). No thread surface
+      // exists yet, so continueThreadId is always unset -> we always mint.
+      raw.worldId = raw.continueThreadId ? threadWorldId(raw.continueThreadId) : newWorldId();
+
+      const wizardAnswers = buildWizardAnswers(raw);
       const req: GenerateArcRequest = {
         attestationToken: "dev-attestation-token",
         deviceId: "dev-device-id",
-        answers,
+        answers: wizardAnswers,
       };
       const response = await new FakeProxyClient().generateArc(req);
-      navigate({ screen: "cardpick", params: { response, answers } });
+      navigate({ screen: "cardpick", params: { response, answers: wizardAnswers } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -70,69 +80,18 @@ export default function WizardScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>New Story</Text>
 
-      <Field label="Tier">
-        <ChipRow options={TIER_NAMES} value={tier} onSelect={setTier} />
-      </Field>
-
-      <Field label="Age band">
-        <ChipRow options={AGE_NAMES} value={ageBand} onSelect={setAgeBand} />
-      </Field>
-
-      <Field label="Arc shape">
-        <ChipRow options={ARC_SHAPES} value={shape} onSelect={setShape} />
-      </Field>
-
-      <Field label="Teaching virtue">
-        <ChipRow options={[...CURATED_VIRTUES]} value={virtue} onSelect={setVirtue} />
-      </Field>
-
-      <Field label="Closing verse">
-        <Pressable
-          style={[styles.toggle, closingVerseEnabled && styles.toggleOn]}
-          onPress={() => setClosingVerseEnabled((v) => !v)}
-        >
-          <Text style={[styles.toggleText, closingVerseEnabled && styles.toggleTextOn]}>
-            {closingVerseEnabled ? "On" : "Off"}
-          </Text>
-        </Pressable>
-      </Field>
-
-      <Field label="World">
-        <TextInput
-          style={styles.input}
-          value={world}
-          onChangeText={setWorld}
-          placeholder="e.g. Willowmere"
-          placeholderTextColor="#999"
-        />
-      </Field>
-
-      <Field label="Hero">
-        <TextInput
-          style={styles.input}
-          value={hero}
-          onChangeText={setHero}
-          placeholder="e.g. a brave little mouse"
-          placeholderTextColor="#999"
-        />
-      </Field>
-
-      <Field label="Villain">
-        <TextInput
-          style={styles.input}
-          value={villain}
-          onChangeText={setVillain}
-          placeholder="e.g. a grumpy shadow"
-          placeholderTextColor="#999"
-        />
-      </Field>
+      {visibleNodes.map((node) => (
+        <Field key={node.id} label={labelFor(node.id)}>
+          <NodeControl node={node} answers={answers} onChange={setAnswer} />
+        </Field>
+      ))}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <Pressable
-        style={[styles.primary, busy && styles.primaryDisabled]}
+        style={[styles.primary, (busy || !canSubmit) && styles.primaryDisabled]}
         onPress={onSubmit}
-        disabled={busy}
+        disabled={busy || !canSubmit}
       >
         <Text style={styles.primaryText}>{busy ? "Weaving…" : "Weave the tale"}</Text>
       </Pressable>
@@ -140,11 +99,110 @@ export default function WizardScreen() {
   );
 }
 
+/** Render a single wizard node by its `kind`. */
+function NodeControl({
+  node,
+  answers,
+  onChange,
+}: {
+  node: WizardNode;
+  answers: NodeAnswers;
+  onChange: (id: string, value: string | boolean | undefined) => void;
+}) {
+  switch (node.kind) {
+    case "single-select":
+    case "dial": {
+      // The dial is rendered as a chip row for this slice (no slider yet).
+      const options = [...(node.options ?? [])];
+      const current = (answers[node.id] as string | undefined) ?? (node.default as string | undefined);
+      return (
+        <ChipRow
+          options={options}
+          value={current}
+          onSelect={(v) => onChange(node.id, v)}
+        />
+      );
+    }
+    case "text": {
+      const value = (answers[node.id] as string | undefined) ?? (node.default as string | undefined) ?? "";
+      return (
+        <TextInput
+          testID={node.id}
+          style={styles.input}
+          value={value}
+          onChangeText={(v: string) => onChange(node.id, v)}
+          placeholder={placeholderFor(node.id)}
+          placeholderTextColor="#999"
+        />
+      );
+    }
+    case "toggle": {
+      const on = (answers[node.id] as boolean | undefined) ?? (node.default as boolean | undefined) ?? false;
+      return (
+        <Pressable
+          testID={node.id}
+          style={[styles.toggle, on && styles.toggleOn]}
+          onPress={() => onChange(node.id, !on)}
+        >
+          <Text style={[styles.toggleText, on && styles.toggleTextOn]}>{on ? "On" : "Off"}</Text>
+        </Pressable>
+      );
+    }
+    case "thread-pick": {
+      // No saved-thread surface exists yet (app passes __hasThreads: false, so
+      // this node stays hidden). Render an inert placeholder ONLY if it ever
+      // becomes visible — no Library is built here.
+      return (
+        <View testID={node.id} style={styles.placeholder}>
+          <Text style={styles.placeholderText}>No saved threads yet.</Text>
+        </View>
+      );
+    }
+  }
+}
+
 /** Mint a fresh unique Storyworld id for a newly started story. */
 function newWorldId(): string {
   const g = globalThis.crypto as { randomUUID?: () => string } | undefined;
   if (g?.randomUUID) return `world-${g.randomUUID()}`;
   return `world-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * The worldId of a continued thread. There is no saved-thread surface yet, so
+ * this branch is unreachable; wired for the eventual continue-a-thread flow.
+ */
+function threadWorldId(_continueThreadId: string): string {
+  return newWorldId();
+}
+
+/** Resolve a node's effective value: explicit answer, else default when visible. */
+function resolveValue(node: WizardNode, answers: NodeAnswers): string | boolean | undefined {
+  const answer = answers[node.id];
+  if (answer !== undefined) return answer;
+  return node.default;
+}
+
+/** A human label derived from the node id ("ageBand" -> "Age band"). */
+function labelFor(id: string): string {
+  const spaced = id.replace(/([A-Z])/g, " $1").toLowerCase().trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Friendly placeholders for the well-known free-text nodes; blank otherwise. */
+function placeholderFor(id: string): string {
+  switch (id) {
+    case "world":
+      return "e.g. Willowmere";
+    case "hero":
+      return "e.g. a brave little mouse";
+    case "villain":
+      return "e.g. a grumpy shadow";
+    case "situation":
+      return "e.g. sharing when it's hard";
+    default:
+      return "";
+  }
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -156,14 +214,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ChipRow<T extends string>({
+function ChipRow({
   options,
   value,
   onSelect,
 }: {
-  options: T[];
-  value: T;
-  onSelect: (v: T) => void;
+  options: string[];
+  value: string | undefined;
+  onSelect: (v: string) => void;
 }) {
   return (
     <View style={styles.chipRow}>
@@ -222,6 +280,14 @@ const styles = StyleSheet.create({
     color: "#222",
     backgroundColor: "#fafafa",
   },
+  placeholder: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#f2f1f7",
+    borderWidth: 1,
+    borderColor: "#e2e0ee",
+  },
+  placeholderText: { fontSize: 14, color: "#777" },
   error: { color: "#c0392b", fontSize: 14 },
   primary: {
     marginTop: 8,
