@@ -21,6 +21,21 @@ function fakeClient(text: string) {
   return { client, create };
 }
 
+/** A fake client that returns each text in turn (last text repeats once the
+ *  list is exhausted), so tests can exercise the repair-retry loop. */
+function fakeClientSeq(...texts: string[]) {
+  let i = 0;
+  const create = vi.fn(
+    async (_params: Anthropic.MessageCreateParamsNonStreaming) => {
+      const text = texts[Math.min(i, texts.length - 1)];
+      i += 1;
+      return { content: [{ type: "text" as const, text }] };
+    },
+  );
+  const client: LlmClient = { messages: { create } };
+  return { client, create };
+}
+
 const answers: WizardAnswers = {
   tier: "beginner",
   ageBand: "preschool",
@@ -151,6 +166,40 @@ describe("ApiLlmProvider.writeArc", () => {
     await expect(
       provider.writeArc({ answers, shape: "quest", bible }),
     ).rejects.toThrow();
+  });
+
+  it("retries and self-corrects when the first reply has a bad spineBeat enum", async () => {
+    const badBeats = [
+      { spineBeat: "rising-action", text: "x", dealtCardIds: [] },
+    ];
+    const { client, create } = fakeClientSeq(
+      JSON.stringify({ beats: badBeats }),
+      JSON.stringify({ beats: fullSpineBeats }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.writeArc({ answers, shape: "quest", bible });
+    expect(result.beats).toHaveLength(5);
+    // one repair round: two model calls total
+    expect(create).toHaveBeenCalledTimes(2);
+    // the repair turn echoes the bad reply + asks for corrected JSON
+    const repairMessages = create.mock.calls[1][0].messages;
+    expect(repairMessages).toHaveLength(3);
+    expect(repairMessages[1].role).toBe("assistant");
+    expect(JSON.stringify(repairMessages[2])).toMatch(/corrected JSON/i);
+  });
+
+  it("throws after exhausting retries when every reply is invalid", async () => {
+    const { client, create } = fakeClientSeq(
+      JSON.stringify({ beats: [{ spineBeat: "climax", text: "x", dealtCardIds: [] }] }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    await expect(
+      provider.writeArc({ answers, shape: "quest", bible }),
+    ).rejects.toThrow();
+    // initial attempt + 1 retry
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("throws when the JSON is shaped wrong (bad spineBeat)", async () => {
