@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
  * - Keeps `environment: node` so the existing pure-logic flow tests are
  *   unaffected.
  */
-const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+const r = (p: string) => fileURLToPath(new URL(p, import.meta.url).href);
 
 export default defineConfig({
   // App.tsx (and other screens) rely on the automatic JSX runtime — no explicit
