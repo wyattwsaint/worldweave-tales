@@ -1,10 +1,19 @@
 import type { GenerateArcRequest, GenerateArcResponse } from "@wwt/domain";
 
 /**
+ * The structural contract both {@link ProxyClient} and the test-only
+ * FakeProxyClient satisfy. Screens depend on THIS, so a fake can be injected
+ * without any network I/O.
+ */
+export interface ProxyClientLike {
+  generateArc(req: GenerateArcRequest): Promise<GenerateArcResponse>;
+}
+
+/**
  * Thin client for the proxy. The app never holds API keys — it only talks to
  * our own proxy, attaching the device's attestation token + device id.
  */
-export class ProxyClient {
+export class ProxyClient implements ProxyClientLike {
   constructor(private baseUrl: string) {}
 
   async generateArc(req: GenerateArcRequest): Promise<GenerateArcResponse> {
