@@ -43,9 +43,15 @@ export async function generateArc(
   // 4. Enforce the per-tier NEW-entity cap (reused canon is unlimited & free).
   const capped = newEntities.slice(0, tier.newEntityCap);
 
-  const providerStyleRef = world
-    ? (await deps.image.ensureStyle(world.artStyle)).providerStyleRef
-    : "stub-style:default";
+  // Every world — including a brand-new one — locks its ONE art style through
+  // the provider. A new world has no artStyle yet, so fall back to the MVP
+  // pencil preset; routing through ensureStyle keeps the provider owning the
+  // style decision (the real Recraft adapter rejects a raw "stub-style:*" ref).
+  const artStyle = world?.artStyle ?? {
+    presetId: "pencil-mvp",
+    displayName: "Imaginative Pencil Sketch",
+  };
+  const providerStyleRef = (await deps.image.ensureStyle(artStyle)).providerStyleRef;
 
   const newCanonCards: Card[] = [];
   const pendingCardChoices: GeneratedCardChoice[] = [];
