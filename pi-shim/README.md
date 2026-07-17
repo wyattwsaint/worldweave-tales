@@ -31,13 +31,41 @@ proxy parses JSON beats / entities / bible as usual
 
 ## Pi setup
 
-Requires Node ≥ 20 and the Claude Code CLI installed and logged in:
+Requires Node 22+ (the official Claude Code requirement; the target Pi runs
+v22.22.3) and the Claude Code CLI installed and logged in:
 
 ```bash
 npm i -g @anthropic-ai/claude-code   # or the current install method
-claude login                          # authenticate the subscription (once)
+claude login                          # authenticate the subscription (interactive, once)
 claude -p "say hi" --output-format json   # smoke-test the CLI itself
 ```
+
+### Headless auth (no browser on the Pi)
+
+`claude login` is interactive. For an unattended Pi, use a long-lived token instead:
+
+```bash
+# On a machine already logged into the Pro/Max account (run once):
+claude setup-token                   # prints a ~1-year OAuth token
+```
+
+Then set it in the shim's environment on the Pi:
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=<token-from-setup-token>
+```
+
+The shim intentionally strips `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` from the
+child env but **passes `CLAUDE_CODE_OAUTH_TOKEN` through**, so this token is what
+authenticates the subscription in headless mode.
+
+Alternative: copy `~/.claude/.credentials.json` (mode `0600`) from an authed
+machine to the Pi user the shim runs as.
+
+### Target hardware
+
+Verified to run on a **Raspberry Pi 4 Model B 8GB** (aarch64, Debian 13 trixie),
+Node 22, with the `claude` CLI installed. 8GB is recommended; ≤4GB risks OOM.
 
 Then, from the repo:
 

@@ -113,6 +113,25 @@ describe("runClaude", () => {
     expect(seen[0].PATH).toBe("/usr/bin"); // other env preserved
   });
 
+  it("passes CLAUDE_CODE_OAUTH_TOKEN through to the child env (subscription-auth passthrough)", async () => {
+    // Regression/characterization guard: this passes today. A future refactor to an
+    // allowlist, or adding the OAuth token to AUTH_OVERRIDE_VARS, must break this test.
+    const seen: NodeJS.ProcessEnv[] = [];
+    const run: RunCommand = vi.fn(async (_cmd, _args, opts) => {
+      seen.push(opts.env);
+      return { code: 0, stdout: JSON.stringify({ result: "ok" }), stderr: "" };
+    });
+    await runClaude(req, run, {
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-should-survive",
+      ANTHROPIC_API_KEY: "sk-should-be-removed",
+      ANTHROPIC_AUTH_TOKEN: "auth-should-be-removed",
+      PATH: "/usr/bin",
+    });
+    expect(seen[0].CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-should-survive"); // survives
+    expect(seen[0].ANTHROPIC_API_KEY).toBeUndefined(); // stripped
+    expect(seen[0].ANTHROPIC_AUTH_TOKEN).toBeUndefined(); // stripped
+  });
+
   it("throws on a non-zero exit, surfacing stderr", async () => {
     const run: RunCommand = vi.fn(async () => ({
       code: 1,
