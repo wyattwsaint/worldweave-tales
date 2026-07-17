@@ -38,9 +38,10 @@ function allText(node: Node): string {
   return parts.join(" ");
 }
 
-function textInputByPlaceholder(root: ReactTestRenderer, placeholder: string): Node {
+/** A text node in the graph renderer, addressed by its stable node-id testID. */
+function textInputByTestID(root: ReactTestRenderer, testID: string): Node {
   return root.root.find(
-    (n) => isHost(n.type, "rn-textinput") && n.props.placeholder === placeholder,
+    (n) => isHost(n.type, "rn-textinput") && n.props.testID === testID,
   );
 }
 
@@ -75,18 +76,24 @@ async function runFlow(overrides?: { world?: string; hero?: string; villain?: st
     root = TestRenderer.create(<App />);
   });
 
-  // --- WIZARD: fill required free-text fields, submit ---
+  // --- WIZARD: pick a tier that exposes all three story fields, fill them, submit.
+  // The wizard is now a generic graph renderer: villain is a Solid/Epic node, so
+  // select "solid" first to reveal it, then address each free-text node by its
+  // stable node-id testID. ---
   const world = overrides?.world ?? "Willowmere";
   const hero = overrides?.hero ?? "Pip";
   const villain = overrides?.villain ?? "Gloom";
   await act(async () => {
-    textInputByPlaceholder(root, "e.g. Willowmere").props.onChangeText(world);
+    pressableByLabel(root, "solid").props.onPress();
   });
   await act(async () => {
-    textInputByPlaceholder(root, "e.g. a brave little mouse").props.onChangeText(hero);
+    textInputByTestID(root, "world").props.onChangeText(world);
   });
   await act(async () => {
-    textInputByPlaceholder(root, "e.g. a grumpy shadow").props.onChangeText(villain);
+    textInputByTestID(root, "hero").props.onChangeText(hero);
+  });
+  await act(async () => {
+    textInputByTestID(root, "villain").props.onChangeText(villain);
   });
 
   const wizardText = allText(root.root);
@@ -124,16 +131,21 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     (store as unknown as { worlds: Map<string, unknown> }).worlds.clear();
   });
 
-  check("A1 Wizard shows the 'New Story' screen with the three story fields", () => {
-    // Rendered synchronously; use a fresh mount.
+  check("A1 Wizard shows the 'New Story' screen with the graph-driven story fields", () => {
+    // Rendered synchronously; use a fresh mount. At the seeded Beginner tier the
+    // world + hero free-text nodes are visible; villain is a Solid/Epic node.
     let root!: ReactTestRenderer;
     act(() => {
       root = TestRenderer.create(<App />);
     });
     expect(allText(root.root)).toContain("New Story");
-    expect(textInputByPlaceholder(root, "e.g. Willowmere")).toBeTruthy();
-    expect(textInputByPlaceholder(root, "e.g. a brave little mouse")).toBeTruthy();
-    expect(textInputByPlaceholder(root, "e.g. a grumpy shadow")).toBeTruthy();
+    expect(textInputByTestID(root, "world")).toBeTruthy();
+    expect(textInputByTestID(root, "hero")).toBeTruthy();
+    // Reveal the Solid/Epic villain node by switching tiers.
+    act(() => {
+      pressableByLabel(root, "solid").props.onPress();
+    });
+    expect(textInputByTestID(root, "villain")).toBeTruthy();
   });
 
   check("A2 After submit, Card-Pick shows 'Pick the Art' and hero+villain variant swatches", async () => {
