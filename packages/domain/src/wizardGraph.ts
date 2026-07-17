@@ -229,7 +229,7 @@ export function getVisibleNodes(tier: Tier, answers: NodeAnswers): WizardNode[] 
 // ---------------------------------------------------------------------------
 
 /** Resolve a node's effective value: explicit answer, else its default when visible. */
-function resolveValue(node: WizardNode, answers: NodeAnswers): string | boolean | undefined {
+export function resolveValue(node: WizardNode, answers: NodeAnswers): string | boolean | undefined {
   const answer = answers[node.id];
   if (answer !== undefined) return answer;
   return node.default;

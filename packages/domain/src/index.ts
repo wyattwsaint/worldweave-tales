@@ -310,6 +310,7 @@ export {
   WIZARD_GRAPH,
   getVisibleNodes,
   assembleRawPicks,
+  resolveValue,
   type WizardNode,
   type NodeAnswers,
   type NodeBinding,

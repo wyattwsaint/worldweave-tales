@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import {
   assembleRawPicks,
   getVisibleNodes,
+  resolveValue,
   type GenerateArcRequest,
   type NodeAnswers,
   type Tier,
@@ -174,13 +175,6 @@ function newWorldId(): string {
  */
 function threadWorldId(_continueThreadId: string): string {
   return newWorldId();
-}
-
-/** Resolve a node's effective value: explicit answer, else default when visible. */
-function resolveValue(node: WizardNode, answers: NodeAnswers): string | boolean | undefined {
-  const answer = answers[node.id];
-  if (answer !== undefined) return answer;
-  return node.default;
 }
 
 /** A human label derived from the node id ("ageBand" -> "Age band"). */

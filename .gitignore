@@ -1,5 +1,7 @@
 # deps
 node_modules/
+# claude-code agent worktrees (isolated writer checkouts; never part of the repo)
+.claude/worktrees/
 # builds
 dist/
 build/
