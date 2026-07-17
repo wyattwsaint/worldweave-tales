@@ -16,6 +16,21 @@ import {
 
 const ALL_TIERS: Tier[] = ["beginner", "solid", "epic"];
 
+describe("barrel public surface — regression for the index<->wizardGraph cycle", () => {
+  // Guards against the temporal-dead-zone crash caused by the former circular
+  // import (wizardGraph importing catalog consts from the ./index barrel). The
+  // real failure only surfaces in the compiled ESM/CJS output; this test at
+  // least pins that the barrel exposes both the catalog consts and the wizard
+  // graph, non-empty, from a single import site.
+  it("exposes TIERS and WIZARD_GRAPH together, both non-empty", () => {
+    expect(Object.keys(TIERS).length).toBeGreaterThan(0);
+    expect(WIZARD_GRAPH.length).toBeGreaterThan(0);
+    expect(AGE_BANDS).toBeDefined();
+    expect(ARC_SHAPES.length).toBeGreaterThan(0);
+    expect(CURATED_VIRTUES.length).toBeGreaterThan(0);
+  });
+});
+
 describe("WIZARD_GRAPH — well-formed schema", () => {
   it("has unique node ids", () => {
     const ids = WIZARD_GRAPH.map((n) => n.id);
