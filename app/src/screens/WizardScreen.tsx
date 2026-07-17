@@ -29,8 +29,11 @@ import { useNav } from "../nav/NavContext";
  * The proxy client is injected (defaulting to the real {@link ProxyClient}) so
  * tests can supply a network-free fake.
  */
+// Module-level singleton so re-renders don't each allocate a fresh client.
+const defaultClient = new ProxyClient(PROXY_URL);
+
 export default function WizardScreen({
-  client = new ProxyClient(PROXY_URL),
+  client = defaultClient,
 }: {
   client?: ProxyClientLike;
 } = {}) {
