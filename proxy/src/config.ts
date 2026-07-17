@@ -9,6 +9,9 @@ export const config = {
   llm: {
     apiKey: process.env.LLM_API_KEY ?? "",
     model: process.env.LLM_MODEL ?? "",
+    // Base-URL knob: default (empty) => Anthropic's default host
+    // (https://api.anthropic.com). Point at a local shim for testing.
+    baseUrl: process.env.LLM_BASE_URL ?? "",
   },
 
   abuse: {
