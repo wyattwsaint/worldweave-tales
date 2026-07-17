@@ -11,7 +11,7 @@ import { store } from "../storage/store";
  */
 export default function ViewerScreen({ params }: { params: ViewerParams }) {
   const { navigate } = useNav();
-  const { arc, cards } = params;
+  const { arc, cards, bible } = params;
   const byId = new Map<string, Card>(cards.map((c) => [c.entityId, c]));
 
   useEffect(() => {
@@ -21,18 +21,12 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
       artStyle: { presetId: "pencil-sketch", displayName: "Imaginative Pencil-Sketch" },
       defaultAgeBand: arc.ageBand,
       deck: cards,
-      bible: {
-        entitySheets: [],
-        eventLog: [],
-        worldState: [],
-        openThreads: [],
-        virtuesTaught: [],
-      },
+      bible,
       arcIds: [arc.id],
       createdAt: arc.createdAt,
     };
     void store.saveWorld(world);
-  }, [arc, cards]);
+  }, [arc, cards, bible]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>

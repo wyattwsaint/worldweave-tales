@@ -26,7 +26,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
       return applyCardPick(base, picks[choice.role], now);
     });
     const cards: Card[] = [...pickedCards, ...response.newCanonCards];
-    navigate({ screen: "viewer", params: { arc: response.arc, cards } });
+    navigate({ screen: "viewer", params: { arc: response.arc, cards, bible: response.bible } });
   }
 
   return (

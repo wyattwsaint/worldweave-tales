@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { Arc, Card, GenerateArcResponse, WizardAnswers } from "@wwt/domain";
+import type { Arc, Card, GenerateArcResponse, StoryBible, WizardAnswers } from "@wwt/domain";
 
 /**
  * Tiny hand-rolled navigator. No external nav library — just a discriminated
@@ -24,6 +24,8 @@ export interface CardPickParams {
 export interface ViewerParams {
   arc: Arc;
   cards: Card[];
+  /** The Story Bible generated for this arc, persisted with the finished world. */
+  bible: StoryBible;
 }
 
 interface NavContextValue {
