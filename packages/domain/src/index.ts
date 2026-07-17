@@ -301,3 +301,17 @@ export interface GenerateArcResponse {
   /** Updated bible to persist locally. */
   bible: StoryBible;
 }
+
+// ---------------------------------------------------------------------------
+// Wizard question-tree (pure data + pure functions). See wizardGraph.ts.
+// ---------------------------------------------------------------------------
+
+export {
+  WIZARD_GRAPH,
+  getVisibleNodes,
+  assembleRawPicks,
+  type WizardNode,
+  type NodeAnswers,
+  type NodeBinding,
+  type RawWizardPicks,
+} from "./wizardGraph";
