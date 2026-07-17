@@ -262,24 +262,57 @@ export class ApiLlmProvider implements LlmProvider {
     this.client = opts?.client ?? defaultClient(cfg);
   }
 
-  /** Call the model and return the parsed JSON validated against `schema`. */
+  /**
+   * Call the model and return the parsed JSON validated against `schema`.
+   *
+   * On a JSON-parse or schema-validation failure, feed the invalid reply and
+   * the error back to the model and re-ask (`opts.retries` extra attempts) —
+   * a plain re-ask tends to repeat the mistake, so we show it what was wrong.
+   * The last error is rethrown once attempts are exhausted.
+   */
   private async complete<S extends z.ZodTypeAny>(
     prompt: string,
     schema: S,
+    opts: { retries?: number } = {},
   ): Promise<z.output<S>> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
-    // JSON.parse throws on non-JSON; zod throws on a wrong shape.
-    const parsed: unknown = JSON.parse(extractJson(text));
-    return schema.parse(parsed);
+    const maxAttempts = (opts.retries ?? 0) + 1;
+    const messages: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }> = [{ role: "user", content: prompt }];
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM_PROMPT,
+        messages,
+      });
+      const text = response.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("");
+      try {
+        // JSON.parse throws on non-JSON; zod throws on a wrong shape.
+        const parsed: unknown = JSON.parse(extractJson(text));
+        return schema.parse(parsed);
+      } catch (err) {
+        lastErr = err;
+        const detail = err instanceof Error ? err.message : String(err);
+        messages.push(
+          { role: "assistant", content: text },
+          {
+            role: "user",
+            content:
+              `That response was not valid: ${detail}.\n` +
+              `Reply with ONLY corrected JSON that matches the required shape ` +
+              `exactly — no prose, no code fences.`,
+          },
+        );
+      }
+    }
+    throw lastErr;
   }
 
   async writeArc(input: {
@@ -304,7 +337,7 @@ export class ApiLlmProvider implements LlmProvider {
       `order listed; if you write extra beats between milestones, tag each ` +
       `with the most recent spine value it belongs to (so the "spineBeat" ` +
       `values are non-decreasing along the spine).`;
-    return this.complete(prompt, writeArcSchema);
+    return this.complete(prompt, writeArcSchema, { retries: 1 });
   }
 
   async extractNewEntities(input: {
@@ -319,7 +352,9 @@ export class ApiLlmProvider implements LlmProvider {
       `Return JSON: { "entities": [ { "entityId": string, "role": ` +
       `"hero"|"villain"|"companion"|"place"|"artifact"|"other", ` +
       `"appearanceNote": string } ] }`;
-    const { entities } = await this.complete(prompt, extractSchema);
+    const { entities } = await this.complete(prompt, extractSchema, {
+      retries: 1,
+    });
     // Defense in depth: the prompt asks the model to exclude canon entities, but
     // a disobedient reply must not reintroduce a locked entity as "new" (that
     // would mint a duplicate card and pay image cost for existing canon).
@@ -348,7 +383,7 @@ export class ApiLlmProvider implements LlmProvider {
       `string[] }. "relationships" MUST be an array of strings (e.g. ` +
       `["mentor: owl"]), never an object. Every entitySheet MUST include ` +
       `its "entityId".`;
-    return this.complete(prompt, storyBibleSchema);
+    return this.complete(prompt, storyBibleSchema, { retries: 1 });
   }
 }
 
