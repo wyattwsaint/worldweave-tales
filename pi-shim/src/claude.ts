@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 
 /**
  * The slice of the Anthropic Messages request the shim actually uses. `content`
@@ -15,8 +15,11 @@ export interface MessagesRequest {
 export type RunCommand = (
   command: string,
   args: string[],
-  options: { env: NodeJS.ProcessEnv },
+  options: { env: NodeJS.ProcessEnv; input?: string; signal?: AbortSignal },
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+/** Default per-call ceiling; a hung session must not pin a request open forever. */
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
  * Env vars that would divert `claude -p` from the logged-in subscription to
@@ -25,7 +28,7 @@ export type RunCommand = (
  */
 const AUTH_OVERRIDE_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 
-/** Flatten Messages `messages[]` into the single prompt string `claude -p` takes. */
+/** Flatten Messages `messages[]` into the single prompt string `claude -p` reads. */
 export function messagesToPrompt(
   messages: Array<{ role: string; content: string }>,
 ): string {
@@ -33,16 +36,16 @@ export function messagesToPrompt(
 }
 
 /**
- * Build argv for a FRESH headless Claude Code session:
- *  - `-p <prompt>`            one-shot, stateless (no --continue/--resume)
+ * Build argv for a FRESH headless Claude Code session. The prompt is NOT here —
+ * it is piped over stdin so a large StoryBible can't blow the ARG_MAX limit.
+ *  - `-p`                     one-shot, stateless (no --continue/--resume)
  *  - `--output-format json`   machine-parseable envelope (.result holds the text)
  *  - `--model <id>`           per-call model (pass "opus" on the Pi for Opus prose)
  *  - `--system-prompt <sys>`  REPLACES Claude Code's coding-agent prompt so the
  *                             model behaves as the prose engine, not a CLI agent
  */
 export function buildClaudeArgs(req: MessagesRequest): string[] {
-  const prompt = messagesToPrompt(req.messages);
-  const args = ["-p", prompt, "--output-format", "json", "--model", req.model];
+  const args = ["-p", "--output-format", "json", "--model", req.model];
   if (req.system) args.push("--system-prompt", req.system);
   return args;
 }
@@ -60,42 +63,63 @@ export function parseEnvelope(stdout: string): string {
   return (envelope as { result: string }).result;
 }
 
-/** Default runner: exec the real `claude` binary and collect its output. */
+/** Default runner: spawn the real `claude` binary, pipe the prompt in over stdin. */
 const defaultRun: RunCommand = (command, args, options) =>
-  new Promise((resolve) => {
-    execFile(
-      command,
-      args,
-      { env: options.env, maxBuffer: 32 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        const code =
-          err && typeof (err as { code?: unknown }).code === "number"
-            ? (err as { code: number }).code
-            : err
-              ? 1
-              : 0;
-        resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
-      },
-    );
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: options.env,
+      signal: options.signal,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d.toString()));
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    // Fires on spawn failure (ENOENT when claude isn't on PATH, abort, etc.);
+    // reject with the real Error so its message/code survives to the caller.
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    if (options.input !== undefined) child.stdin.write(options.input);
+    child.stdin.end();
   });
 
 /**
  * Run one fresh headless Claude Code call and return the assistant text.
- * `run` and `baseEnv` are injectable for hermetic tests.
+ * `run`, `baseEnv`, and `timeoutMs` are injectable for hermetic tests.
  */
 export async function runClaude(
   req: MessagesRequest,
   run: RunCommand = defaultRun,
   baseEnv: NodeJS.ProcessEnv = process.env,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of AUTH_OVERRIDE_VARS) delete env[key];
 
-  const { code, stdout, stderr } = await run("claude", buildClaudeArgs(req), {
-    env,
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`claude timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
   });
-  if (code !== 0) {
-    throw new Error(`claude exited ${code}: ${stderr.trim() || "(no stderr)"}`);
+
+  let result: { code: number; stdout: string; stderr: string };
+  try {
+    result = await Promise.race([
+      run("claude", buildClaudeArgs(req), {
+        env,
+        input: messagesToPrompt(req.messages),
+        signal: controller.signal,
+      }),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return parseEnvelope(stdout);
+
+  if (result.code !== 0) {
+    throw new Error(`claude exited ${result.code}: ${result.stderr.trim() || "(no stderr)"}`);
+  }
+  return parseEnvelope(result.stdout);
 }

@@ -10,8 +10,9 @@ Sonnet/Opus) instead of paying per-token on the API.
 proxy (ApiLlmProvider, @anthropic-ai/sdk)
    │  POST /v1/messages   { model, system, messages }
    ▼
-pi-shim  ──►  claude -p <prompt> --output-format json
+pi-shim  ──►  claude -p --output-format json
                  --model <model> --system-prompt <system>
+                 (prompt piped over stdin; 120s timeout)
    │  { content: [{ type: "text", text: <.result> }] }
    ▼
 proxy parses JSON beats / entities / bible as usual

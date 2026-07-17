@@ -39,8 +39,8 @@ describe("buildClaudeArgs", () => {
     // never resume a prior session
     expect(args).not.toContain("--continue");
     expect(args).not.toContain("--resume");
-    // the user prompt is passed
-    expect(args.some((a) => a.includes("Write a quest for courage."))).toBe(true);
+    // the prompt goes over stdin, NOT as an argv element (avoids ARG_MAX)
+    expect(args.some((a) => a.includes("Write a quest for courage."))).toBe(false);
   });
 
   it("omits --system-prompt when no system is given", () => {
@@ -77,6 +77,29 @@ describe("runClaude", () => {
     }));
     const text = await runClaude(req, run);
     expect(text).toBe("hello world");
+  });
+
+  it("sends the prompt over stdin (options.input), not as an argument", async () => {
+    let seenInput: string | undefined;
+    const run: RunCommand = vi.fn(async (_cmd, _args, opts) => {
+      seenInput = opts.input;
+      return { code: 0, stdout: JSON.stringify({ result: "ok" }), stderr: "" };
+    });
+    await runClaude(req, run);
+    expect(seenInput).toContain("Write a quest for courage.");
+  });
+
+  it("rejects when the child exceeds the timeout", async () => {
+    // A runner that never resolves — the timeout must be what settles the call.
+    const run: RunCommand = () => new Promise(() => {});
+    await expect(runClaude(req, run, process.env, 10)).rejects.toThrow(/timed out/i);
+  });
+
+  it("propagates a spawn error (e.g. ENOENT) message", async () => {
+    const run: RunCommand = async () => {
+      throw new Error("spawn claude ENOENT");
+    };
+    await expect(runClaude(req, run)).rejects.toThrow(/ENOENT/);
   });
 
   it("strips ANTHROPIC_API_KEY from the child env so subscription auth is forced", async () => {

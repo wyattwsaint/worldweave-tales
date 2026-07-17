@@ -44,6 +44,10 @@ export async function handleMessages(
         model: parsed.data.model,
         content: [{ type: "text", text }],
         stop_reason: "end_turn",
+        stop_sequence: null,
+        // The subscription/CLI governs usage; emit a well-formed zero block so a
+        // strict SDK deserializing a Message finds the required field present.
+        usage: { input_tokens: 0, output_tokens: 0 },
       },
     };
   } catch (err) {

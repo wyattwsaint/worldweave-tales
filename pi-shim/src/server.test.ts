@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleMessages, type Runner } from "./server.js";
+import type { AddressInfo } from "node:net";
+import { handleMessages, createApp, type Runner } from "./server.js";
 
 const validBody = {
   model: "claude-haiku-4-5",
@@ -39,5 +40,27 @@ describe("handleMessages", () => {
     const { status, body } = await handleMessages(validBody, run);
     expect(status).toBe(502);
     expect((body as { error?: unknown }).error).toBeDefined();
+  });
+});
+
+describe("createApp wiring", () => {
+  it("routes POST /v1/messages through the app to the runner", async () => {
+    const app = createApp(async () => "wired");
+    const server = app.listen(0);
+    try {
+      const { port } = server.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+      const json = (await res.json()) as {
+        content: Array<{ text?: string }>;
+      };
+      expect(res.status).toBe(200);
+      expect(json.content[0].text).toBe("wired");
+    } finally {
+      server.close();
+    }
   });
 });
