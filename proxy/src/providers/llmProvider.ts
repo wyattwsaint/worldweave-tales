@@ -186,15 +186,44 @@ const extractSchema = z.object({
   ),
 });
 
+/** One relationship as a string: pass strings through, JSON-stringify anything
+ *  else (the model sometimes returns `{entityId, relation}` objects). */
+const relToString = (x: unknown): string =>
+  typeof x === "string" ? x : JSON.stringify(x);
+
+/** Coerce `relationships` to the schema's `string[]`. The model variously
+ *  returns a `string[]`, an array of objects, or a role→who map — accept all,
+ *  and treat null/missing as empty. */
+const relationshipsSchema = z
+  .union([
+    z.array(z.unknown()).transform((arr) => arr.map(relToString)),
+    z
+      .record(z.unknown())
+      .transform((obj) =>
+        Object.entries(obj).map(([k, v]) => `${k}: ${relToString(v)}`),
+      ),
+  ])
+  .nullish()
+  .transform((v) => v ?? []);
+
+/** Tolerant entity-sheet row: coerces object/array-shaped `relationships` and
+ *  treats the fields the model tends to omit (or null out) as empty.
+ *  `entityId` stays required (it can't be invented). */
+const entitySheetSchema = z.object({
+  entityId: z.string(),
+  facts: z
+    .array(z.string())
+    .nullish()
+    .transform((v) => v ?? []),
+  appearanceNote: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? ""),
+  relationships: relationshipsSchema,
+});
+
 const storyBibleSchema = z.object({
-  entitySheets: z.array(
-    z.object({
-      entityId: z.string(),
-      facts: z.array(z.string()),
-      appearanceNote: z.string(),
-      relationships: z.array(z.string()),
-    }),
-  ),
+  entitySheets: z.array(entitySheetSchema),
   eventLog: z.array(
     z.object({
       arcId: z.string(),
@@ -234,10 +263,10 @@ export class ApiLlmProvider implements LlmProvider {
   }
 
   /** Call the model and return the parsed JSON validated against `schema`. */
-  private async complete<T>(
+  private async complete<S extends z.ZodTypeAny>(
     prompt: string,
-    schema: z.ZodType<T>,
-  ): Promise<T> {
+    schema: S,
+  ): Promise<z.output<S>> {
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: MAX_TOKENS,
@@ -302,9 +331,16 @@ export class ApiLlmProvider implements LlmProvider {
       `Prior Bible: ${JSON.stringify(input.priorBible ?? null)}\n` +
       `Wizard answers: ${JSON.stringify(input.answers)}\n` +
       `Beats: ${JSON.stringify(input.beats)}\n` +
-      `Return JSON matching the StoryBible shape: { "entitySheets": [...], ` +
-      `"eventLog": [...], "worldState": string[], "openThreads": [...], ` +
-      `"virtuesTaught": string[] }`;
+      `Return JSON matching the StoryBible shape: { "entitySheets": [ { ` +
+      `"entityId": string, "facts": string[], "appearanceNote": string, ` +
+      `"relationships": string[] } ], "eventLog": [ { "arcId": string, ` +
+      `"summary": string, "lessonTaught": string, "villainResolution"?: ` +
+      `"redeemed"|"defeated"|"banished"|"befriended" } ], "worldState": ` +
+      `string[], "openThreads": [ { "id": string, "teaser": string, ` +
+      `"originArcId": string, "resolved": boolean } ], "virtuesTaught": ` +
+      `string[] }. "relationships" MUST be an array of strings (e.g. ` +
+      `["mentor: owl"]), never an object. Every entitySheet MUST include ` +
+      `its "entityId".`;
     return this.complete(prompt, storyBibleSchema);
   }
 }
