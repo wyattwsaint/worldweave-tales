@@ -88,10 +88,11 @@ describe("WizardScreen (generic graph renderer)", () => {
   });
 
   it("(c) a full Beginner run submits, calls generateArc, and reaches Card-Pick", async () => {
-    const spy = vi.spyOn(FakeProxyClient.prototype, "generateArc");
+    const fake = new FakeProxyClient();
+    const spy = vi.spyOn(fake, "generateArc");
     let root!: ReactTestRenderer;
     await act(async () => {
-      root = TestRenderer.create(<App />);
+      root = TestRenderer.create(<App client={fake} />);
     });
     // Beginner: tier + ageBand are seeded; leave world/hero as "surprise me".
     await act(async () => {
@@ -105,10 +106,11 @@ describe("WizardScreen (generic graph renderer)", () => {
   });
 
   it("(d) a Solid run with a free-text situation yields a situation teaching point (virtue default does NOT clobber)", async () => {
-    const spy = vi.spyOn(FakeProxyClient.prototype, "generateArc");
+    const fake = new FakeProxyClient();
+    const spy = vi.spyOn(fake, "generateArc");
     let root!: ReactTestRenderer;
     await act(async () => {
-      root = TestRenderer.create(<App />);
+      root = TestRenderer.create(<App client={fake} />);
     });
     // Move to Solid (offers the free-text teaching box), then fill the situation.
     await act(async () => {

@@ -2,6 +2,7 @@ import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it } from "vitest";
 import App from "../../App";
+import { FakeProxyClient } from "../api/fakeProxyClient";
 import { store } from "../storage/store";
 
 /**
@@ -73,7 +74,7 @@ function check(name: string, fn: () => void | Promise<void>) {
 async function runFlow(overrides?: { world?: string; hero?: string; villain?: string }) {
   let root!: ReactTestRenderer;
   await act(async () => {
-    root = TestRenderer.create(<App />);
+    root = TestRenderer.create(<App client={new FakeProxyClient()} />);
   });
 
   // --- WIZARD: pick a tier that exposes all three story fields, fill them, submit.
@@ -136,7 +137,7 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     // world + hero free-text nodes are visible; villain is a Solid/Epic node.
     let root!: ReactTestRenderer;
     act(() => {
-      root = TestRenderer.create(<App />);
+      root = TestRenderer.create(<App client={new FakeProxyClient()} />);
     });
     expect(allText(root.root)).toContain("New Story");
     expect(textInputByTestID(root, "world")).toBeTruthy();

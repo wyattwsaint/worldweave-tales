@@ -10,7 +10,8 @@ import {
   type WizardNode,
 } from "@wwt/domain";
 import { buildWizardAnswers, type RawWizardPicks } from "../flow/buildWizardAnswers";
-import { FakeProxyClient } from "../api/fakeProxyClient";
+import { ProxyClient, type ProxyClientLike } from "../api/proxyClient";
+import { PROXY_URL } from "../api/config";
 import { useNav } from "../nav/NavContext";
 
 /**
@@ -23,9 +24,19 @@ import { useNav } from "../nav/NavContext";
  * On submit it reduces the answers to {@link RawWizardPicks} via the domain
  * assembler, stamps a fresh worldId (or, for a continued thread, the thread's
  * worldId — no thread surface exists yet, so that branch is inert), then reuses
- * the unchanged buildWizardAnswers -> FakeProxyClient -> Card-Pick pipeline.
+ * the unchanged buildWizardAnswers -> ProxyClient -> Card-Pick pipeline.
+ *
+ * The proxy client is injected (defaulting to the real {@link ProxyClient}) so
+ * tests can supply a network-free fake.
  */
-export default function WizardScreen() {
+// Module-level singleton so re-renders don't each allocate a fresh client.
+const defaultClient = new ProxyClient(PROXY_URL);
+
+export default function WizardScreen({
+  client = defaultClient,
+}: {
+  client?: ProxyClientLike;
+} = {}) {
   const { navigate } = useNav();
 
   // A single NodeAnswers bag keyed by node id — NOT one useState per field.
@@ -68,7 +79,7 @@ export default function WizardScreen() {
         deviceId: "dev-device-id",
         answers: wizardAnswers,
       };
-      const response = await new FakeProxyClient().generateArc(req);
+      const response = await client.generateArc(req);
       navigate({ screen: "cardpick", params: { response, answers: wizardAnswers } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
