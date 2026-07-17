@@ -7,7 +7,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@wwt/domain": "*",
@@ -18,6 +19,9 @@
   },
   "devDependencies": {
     "@types/react": "~18.2.79",
-    "typescript": "^5.6.0"
+    "@types/react-test-renderer": "^18.3.0",
+    "react-test-renderer": "18.2.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   }
 }

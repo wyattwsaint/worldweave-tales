@@ -1,0 +1,206 @@
+import React from "react";
+import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, describe, expect, it } from "vitest";
+import App from "../../App";
+import { store } from "../storage/store";
+
+/**
+ * HEADLESS ACCEPTANCE RENDER HARNESS.
+ *
+ * Mounts the REAL screen components + the REAL hand-rolled navigator (via App)
+ * under react-test-renderer and drives the Wizard -> Card-Pick -> Viewer flow,
+ * asserting what a user would SEE at each step.
+ *
+ * This is VERIFICATION, not implement-to-green. Assertions express CORRECT
+ * user-visible behavior. Where product code is wrong, the assertion is expected
+ * to FAIL — that failure IS the deliverable finding. No product code is changed
+ * to make these pass.
+ */
+
+// ---- react-test-renderer traversal helpers -------------------------------
+
+type Node = TestRenderer.ReactTestInstance;
+
+function isHost(type: unknown, tag: string) {
+  return type === tag;
+}
+
+/** All host text rendered anywhere under `node`, concatenated. */
+function allText(node: Node): string {
+  const parts: string[] = [];
+  for (const t of node.findAll((n) => isHost(n.type, "rn-text"))) {
+    const collect = (c: unknown) => {
+      if (typeof c === "string" || typeof c === "number") parts.push(String(c));
+      else if (Array.isArray(c)) c.forEach(collect);
+    };
+    collect(t.props.children);
+  }
+  return parts.join(" ");
+}
+
+function textInputByPlaceholder(root: ReactTestRenderer, placeholder: string): Node {
+  return root.root.find(
+    (n) => isHost(n.type, "rn-textinput") && n.props.placeholder === placeholder,
+  );
+}
+
+/** A tappable Pressable whose visible label contains `label`. */
+function pressableByLabel(root: ReactTestRenderer, label: string): Node {
+  const hits = root.root.findAll(
+    (n) => isHost(n.type, "rn-pressable") && allText(n).includes(label),
+  );
+  // Prefer the most specific (fewest descendants) match.
+  return hits.sort((a, b) => a.findAll(() => true).length - b.findAll(() => true).length)[0];
+}
+
+// ---- the flow ------------------------------------------------------------
+
+const results: Array<{ name: string; ok: boolean }> = [];
+function check(name: string, fn: () => void | Promise<void>) {
+  it(name, async () => {
+    try {
+      await fn();
+      results.push({ name, ok: true });
+    } catch (e) {
+      results.push({ name, ok: false });
+      throw e;
+    }
+  });
+}
+
+/** Run one full Wizard->CardPick->Viewer pass; returns the final render + screen text. */
+async function runFlow(overrides?: { world?: string; hero?: string; villain?: string }) {
+  let root!: ReactTestRenderer;
+  await act(async () => {
+    root = TestRenderer.create(<App />);
+  });
+
+  // --- WIZARD: fill required free-text fields, submit ---
+  const world = overrides?.world ?? "Willowmere";
+  const hero = overrides?.hero ?? "Pip";
+  const villain = overrides?.villain ?? "Gloom";
+  await act(async () => {
+    textInputByPlaceholder(root, "e.g. Willowmere").props.onChangeText(world);
+  });
+  await act(async () => {
+    textInputByPlaceholder(root, "e.g. a brave little mouse").props.onChangeText(hero);
+  });
+  await act(async () => {
+    textInputByPlaceholder(root, "e.g. a grumpy shadow").props.onChangeText(villain);
+  });
+
+  const wizardText = allText(root.root);
+
+  await act(async () => {
+    await pressableByLabel(root, "Weave the tale").props.onPress();
+  });
+
+  const cardPickText = allText(root.root);
+
+  // --- CARD-PICK: tap first variant for hero and villain, confirm ---
+  await act(async () => {
+    root.root
+      .find((n) => isHost(n.type, "rn-pressable") && allText(n).includes("stub-image:hero#0"))
+      .props.onPress();
+  });
+  await act(async () => {
+    root.root
+      .find((n) => isHost(n.type, "rn-pressable") && allText(n).includes("stub-image:villain#0"))
+      .props.onPress();
+  });
+  await act(async () => {
+    await pressableByLabel(root, "Weave the tale").props.onPress();
+  });
+
+  const viewerText = allText(root.root);
+  return { root, wizardText, cardPickText, viewerText, world, hero, villain };
+}
+
+// ==========================================================================
+
+describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
+  afterEach(() => {
+    // Reset the module-singleton store between tests so each run is isolated.
+    (store as unknown as { worlds: Map<string, unknown> }).worlds.clear();
+  });
+
+  check("A1 Wizard shows the 'New Story' screen with the three story fields", () => {
+    // Rendered synchronously; use a fresh mount.
+    let root!: ReactTestRenderer;
+    act(() => {
+      root = TestRenderer.create(<App />);
+    });
+    expect(allText(root.root)).toContain("New Story");
+    expect(textInputByPlaceholder(root, "e.g. Willowmere")).toBeTruthy();
+    expect(textInputByPlaceholder(root, "e.g. a brave little mouse")).toBeTruthy();
+    expect(textInputByPlaceholder(root, "e.g. a grumpy shadow")).toBeTruthy();
+  });
+
+  check("A2 After submit, Card-Pick shows 'Pick the Art' and hero+villain variant swatches", async () => {
+    const { cardPickText } = await runFlow();
+    expect(cardPickText).toContain("Pick the Art");
+    expect(cardPickText).toContain("stub-image:hero#0");
+    expect(cardPickText).toContain("stub-image:hero#2");
+    expect(cardPickText).toContain("stub-image:villain#0");
+  });
+
+  check("A3 Viewer renders the finished tale: title, all spine beats, and chosen hero/villain names", async () => {
+    const { viewerText } = await runFlow({ hero: "Pip", villain: "Gloom" });
+    expect(viewerText).toContain("Your Tale");
+    for (const beat of ["setup", "call-to-adventure", "virtue-tested", "good-triumphs", "gentle-hope-hook"]) {
+      expect(viewerText).toContain(beat);
+    }
+    // Parent-chosen card names carried through canonization.
+    expect(viewerText).toContain("Pip");
+    expect(viewerText).toContain("Gloom");
+  });
+
+  check("A4 Viewer beat text reflects the chosen teaching virtue ('courage' default)", async () => {
+    const { viewerText } = await runFlow();
+    expect(viewerText).toContain("courage");
+  });
+
+  // ---- FINDINGS: assertions expected to FAIL against current product code ----
+
+  check(
+    "B1 [BUG: bible discarded at CardPick->Viewer] saved world's bible carries the generated content",
+    async () => {
+      await runFlow();
+      const worlds = await store.listWorlds();
+      const saved = worlds[worlds.length - 1];
+      expect(saved).toBeTruthy();
+      // FakeProxyClient.generateArc produced a real StoryBible (virtuesTaught,
+      // eventLog, openThreads, entitySheets). Viewer must persist THAT bible,
+      // not an empty one. Current code rebuilds an empty bible -> FAILS.
+      expect(saved.bible.virtuesTaught).toContain("courage");
+      expect(saved.bible.eventLog.length).toBeGreaterThan(0);
+      expect(saved.bible.entitySheets.length).toBeGreaterThan(0);
+    },
+  );
+
+  check(
+    "B2 [BUG: worldId clobber under 'new-world'] two runs persist two distinct worlds",
+    async () => {
+      await runFlow({ world: "Willowmere", hero: "Pip", villain: "Gloom" });
+      const afterFirst = (await store.listWorlds()).length;
+      await runFlow({ world: "Brackenford", hero: "Bramble", villain: "Murk" });
+      const worlds = await store.listWorlds();
+      // Each finished story is its own world; ids must be unique. Current code
+      // stamps worldId = "new-world" for every run, so the second clobbers the
+      // first -> listWorlds stays length 1 -> FAILS.
+      expect(afterFirst).toBe(1);
+      expect(worlds.length).toBe(2);
+      const ids = new Set(worlds.map((w) => w.id));
+      expect(ids.size).toBe(2);
+    },
+  );
+
+  it("ZZ summary", () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      "\n=== ACCEPTANCE HARNESS ASSERTION MAP ===\n" +
+        results.map((r) => `${r.ok ? "PASS" : "FAIL"}  ${r.name}`).join("\n") +
+        "\n========================================\n",
+    );
+  });
+});
