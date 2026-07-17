@@ -295,8 +295,15 @@ export class ApiLlmProvider implements LlmProvider {
       `${INVARIANT_SPINE.join(", ")}.\n` +
       `Wizard answers: ${JSON.stringify(input.answers)}\n` +
       `Story Bible (canon to honor): ${JSON.stringify(input.bible ?? null)}\n` +
-      `Return JSON: { "beats": [ { "spineBeat": <one of the spine beats>, ` +
-      `"text": string, "dealtCardIds": string[] } ] }`;
+      `Return JSON: { "beats": [ { "spineBeat": <label>, "text": string, ` +
+      `"dealtCardIds": string[] } ] }.\n` +
+      `Each beat's "spineBeat" MUST be exactly one of these literal values: ` +
+      `${INVARIANT_SPINE.map((s) => `"${s}"`).join(", ")}. Do NOT use any ` +
+      `other names (e.g. NOT "rising-action", "climax", "resolution", ` +
+      `"conflict"). Cover all ${INVARIANT_SPINE.length} spine values in the ` +
+      `order listed; if you write extra beats between milestones, tag each ` +
+      `with the most recent spine value it belongs to (so the "spineBeat" ` +
+      `values are non-decreasing along the spine).`;
     return this.complete(prompt, writeArcSchema);
   }
 

@@ -99,6 +99,22 @@ describe("ApiLlmProvider.writeArc", () => {
     expect(promptText).toContain("courage");
   });
 
+  it("pins spineBeat to the exact enum literals in the prompt (no generic beat names)", async () => {
+    const { client, create } = fakeClient(
+      JSON.stringify({ beats: fullSpineBeats }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    await provider.writeArc({ answers, shape: "quest", bible });
+    const promptText = JSON.stringify(create.mock.calls[0][0].messages);
+    // every allowed enum value spelled out
+    expect(promptText).toContain("setup");
+    expect(promptText).toContain("gentle-hope-hook");
+    // and an explicit directive to use ONLY those literals — the guard against
+    // the model substituting "rising-action"/"climax"/etc.
+    expect(promptText).toMatch(/exactly one of these/i);
+  });
+
   it("parses beats even when the model wraps JSON in a ```json code fence", async () => {
     const { client } = fakeClient(
       "```json\n" + JSON.stringify({ beats: fullSpineBeats }) + "\n```",
