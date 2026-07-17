@@ -47,6 +47,9 @@ export default function WizardScreen() {
         virtue,
         closingVerseEnabled,
         choices: { world, hero, villain },
+        // A brand-new story is its own Storyworld; mint a fresh unique id so
+        // successive stories don't clobber each other in the store.
+        worldId: newWorldId(),
       };
       const answers = buildWizardAnswers(raw);
       const req: GenerateArcRequest = {
@@ -135,6 +138,13 @@ export default function WizardScreen() {
       </Pressable>
     </ScrollView>
   );
+}
+
+/** Mint a fresh unique Storyworld id for a newly started story. */
+function newWorldId(): string {
+  const g = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  if (g?.randomUUID) return `world-${g.randomUUID()}`;
+  return `world-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
