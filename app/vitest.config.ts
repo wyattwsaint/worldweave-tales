@@ -20,6 +20,7 @@ export default defineConfig({
     alias: {
       "react-native": r("./test/react-native.mock.tsx"),
       "expo-status-bar": r("./test/expo-status-bar.mock.tsx"),
+      "expo-constants": r("./test/expo-constants.mock.ts"),
     },
   },
   test: {
