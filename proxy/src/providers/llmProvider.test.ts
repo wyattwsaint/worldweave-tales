@@ -230,4 +230,114 @@ describe("ApiLlmProvider.updateBible", () => {
       provider.updateBible({ priorBible: undefined, beats, answers }),
     ).rejects.toThrow();
   });
+
+  it("coerces an entitySheet whose relationships came back as an object", async () => {
+    const malformed = {
+      entitySheets: [
+        {
+          entityId: "hero",
+          facts: ["brave"],
+          appearanceNote: "mouse",
+          // model returned an object instead of the schema's string[]
+          relationships: { mentor: "owl", rival: "dragon" },
+        },
+      ],
+      eventLog: [],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.entitySheets[0].relationships).toEqual([
+      "mentor: owl",
+      "rival: dragon",
+    ]);
+  });
+
+  it("coerces relationships returned as an array of objects", async () => {
+    const malformed = {
+      entitySheets: [
+        {
+          entityId: "hero",
+          facts: ["brave"],
+          appearanceNote: "mouse",
+          relationships: [{ entityId: "owl", relation: "mentor" }],
+        },
+      ],
+      eventLog: [],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.entitySheets[0].relationships).toEqual([
+      JSON.stringify({ entityId: "owl", relation: "mentor" }),
+    ]);
+  });
+
+  it("treats explicit null facts/appearanceNote/relationships as empty", async () => {
+    const nulls = {
+      entitySheets: [
+        { entityId: "hero", facts: null, appearanceNote: null, relationships: null },
+      ],
+      eventLog: [],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(nulls));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.entitySheets[0]).toEqual({
+      entityId: "hero",
+      facts: [],
+      appearanceNote: "",
+      relationships: [],
+    });
+  });
+
+  it("defaults missing facts/appearanceNote/relationships on an entitySheet", async () => {
+    const sparse = {
+      entitySheets: [{ entityId: "hero" }],
+      eventLog: [],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(sparse));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.entitySheets[0]).toEqual({
+      entityId: "hero",
+      facts: [],
+      appearanceNote: "",
+      relationships: [],
+    });
+  });
+
+  it("spells out the exact entitySheets field contract in the prompt", async () => {
+    const nextBible: StoryBible = {
+      entitySheets: [],
+      eventLog: [],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client, create } = fakeClient(JSON.stringify(nextBible));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    await provider.updateBible({ priorBible: bible, beats, answers });
+    const promptText = JSON.stringify(create.mock.calls[0][0].messages);
+    // entitySheets must be pinned field-by-field, not left as "[...]"
+    expect(promptText).toContain("relationships");
+    expect(promptText).toContain("facts");
+  });
 });
