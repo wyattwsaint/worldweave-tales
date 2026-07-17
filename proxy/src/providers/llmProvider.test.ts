@@ -42,6 +42,15 @@ const beats: Beat[] = [
   { spineBeat: "setup", text: "Once upon a time.", dealtCardIds: [] },
 ];
 
+/** All five invariant spine beats, in order — a spine-complete arc. */
+const fullSpineBeats: Beat[] = [
+  { spineBeat: "setup", text: "A start.", dealtCardIds: ["hero"] },
+  { spineBeat: "call-to-adventure", text: "A call.", dealtCardIds: [] },
+  { spineBeat: "virtue-tested", text: "A test.", dealtCardIds: [] },
+  { spineBeat: "good-triumphs", text: "All safe.", dealtCardIds: [] },
+  { spineBeat: "gentle-hope-hook", text: "A gentle hook.", dealtCardIds: [] },
+];
+
 // --- config knob ---------------------------------------------------------
 
 describe("anthropicClientOptions", () => {
@@ -66,12 +75,7 @@ describe("anthropicClientOptions", () => {
 describe("ApiLlmProvider.writeArc", () => {
   it("sends the model + prompt and parses beats from the response", async () => {
     const { client, create } = fakeClient(
-      JSON.stringify({
-        beats: [
-          { spineBeat: "setup", text: "A start.", dealtCardIds: ["hero"] },
-          { spineBeat: "good-triumphs", text: "All safe.", dealtCardIds: [] },
-        ],
-      }),
+      JSON.stringify({ beats: fullSpineBeats }),
     );
     const provider = new ApiLlmProvider({
       client,
@@ -80,7 +84,7 @@ describe("ApiLlmProvider.writeArc", () => {
 
     const result = await provider.writeArc({ answers, shape: "quest", bible });
 
-    expect(result.beats).toHaveLength(2);
+    expect(result.beats).toHaveLength(5);
     expect(result.beats[0]).toEqual({
       spineBeat: "setup",
       text: "A start.",
@@ -93,6 +97,36 @@ describe("ApiLlmProvider.writeArc", () => {
     const promptText = JSON.stringify(body.messages);
     expect(promptText).toContain("quest");
     expect(promptText).toContain("courage");
+  });
+
+  it("parses beats even when the model wraps JSON in a ```json code fence", async () => {
+    const { client } = fakeClient(
+      "```json\n" + JSON.stringify({ beats: fullSpineBeats }) + "\n```",
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.writeArc({ answers, shape: "quest", bible });
+    expect(result.beats).toHaveLength(5);
+  });
+
+  it("throws when the arc is missing a spine beat (e.g. the safe ending)", async () => {
+    const missingEnding = fullSpineBeats.filter(
+      (b) => b.spineBeat !== "good-triumphs",
+    );
+    const { client } = fakeClient(JSON.stringify({ beats: missingEnding }));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+    await expect(
+      provider.writeArc({ answers, shape: "quest", bible }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when spine beats are out of order", async () => {
+    const reversed = [...fullSpineBeats].reverse();
+    const { client } = fakeClient(JSON.stringify({ beats: reversed }));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+    await expect(
+      provider.writeArc({ answers, shape: "quest", bible }),
+    ).rejects.toThrow();
   });
 
   it("throws on a malformed (non-JSON) response", async () => {
@@ -137,6 +171,27 @@ describe("ApiLlmProvider.extractNewEntities", () => {
     ]);
     const body = create.mock.calls[0][0];
     expect(JSON.stringify(body.messages)).toContain("hero");
+  });
+
+  it("drops entities the model re-listed despite them already being canon", async () => {
+    const { client } = fakeClient(
+      JSON.stringify({
+        entities: [
+          { entityId: "hero", role: "hero", appearanceNote: "already canon" },
+          { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
+        ],
+      }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.extractNewEntities({
+      beats,
+      existingEntityIds: ["hero"],
+    });
+
+    expect(result).toEqual([
+      { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
+    ]);
   });
 
   it("throws on a bad role enum", async () => {

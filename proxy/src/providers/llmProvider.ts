@@ -14,6 +14,24 @@ import { config, usingStubLlm } from "../config.js";
 const DEFAULT_MODEL = "claude-haiku-4-5";
 
 /**
+ * Output-token ceiling. Sized so a full arc or an accumulated StoryBible does
+ * not truncate mid-JSON (a truncated body fails JSON.parse and drops the whole
+ * generation). Well within Haiku 4.5's output limit.
+ */
+const MAX_TOKENS = 16384;
+
+/**
+ * Pull the JSON body out of a model reply, tolerating a ```json … ``` (or bare
+ * ```` ``` ````) code fence — models wrap JSON in fences fairly often despite
+ * the "no code fences" instruction, and an un-stripped fence fails JSON.parse.
+ */
+function extractJson(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+/**
  * Provider-agnostic LLM interface for prose + bible maintenance. Exact model
  * is TBD (SPEC.md §8) — pick a small/fast model at build time.
  */
@@ -120,7 +138,35 @@ const beatSchema = z.object({
   text: z.string(),
   dealtCardIds: z.array(z.string()),
 });
-const writeArcSchema = z.object({ beats: z.array(beatSchema) });
+/**
+ * Beats must cover the whole invariant spine, in order. Completeness guarantees
+ * the safe, resolved ending ("good-triumphs") is present; order-preservation
+ * keeps the spine structural rather than a suggestion the model can shuffle.
+ * (Multiple beats may map to the same spine step, so we check non-decreasing
+ * order + presence, not exact one-per-step equality.) SPEC.md §8.
+ */
+const writeArcSchema = z
+  .object({ beats: z.array(beatSchema) })
+  .superRefine((val, ctx) => {
+    for (const step of INVARIANT_SPINE) {
+      if (!val.beats.some((b) => b.spineBeat === step)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `arc is missing the "${step}" spine beat`,
+        });
+      }
+    }
+    const order = val.beats.map((b) => INVARIANT_SPINE.indexOf(b.spineBeat));
+    for (let i = 1; i < order.length; i++) {
+      if (order[i] < order[i - 1]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "spine beats are out of order",
+        });
+        break;
+      }
+    }
+  });
 
 const cardRoleSchema = z.enum([
   "hero",
@@ -194,7 +240,7 @@ export class ApiLlmProvider implements LlmProvider {
   ): Promise<T> {
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 8192,
+      max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }],
     });
@@ -203,7 +249,7 @@ export class ApiLlmProvider implements LlmProvider {
       .map((b) => b.text ?? "")
       .join("");
     // JSON.parse throws on non-JSON; zod throws on a wrong shape.
-    const parsed: unknown = JSON.parse(text);
+    const parsed: unknown = JSON.parse(extractJson(text));
     return schema.parse(parsed);
   }
 
@@ -238,7 +284,11 @@ export class ApiLlmProvider implements LlmProvider {
       `"hero"|"villain"|"companion"|"place"|"artifact"|"other", ` +
       `"appearanceNote": string } ] }`;
     const { entities } = await this.complete(prompt, extractSchema);
-    return entities;
+    // Defense in depth: the prompt asks the model to exclude canon entities, but
+    // a disobedient reply must not reintroduce a locked entity as "new" (that
+    // would mint a duplicate card and pay image cost for existing canon).
+    const existing = new Set(input.existingEntityIds);
+    return entities.filter((e) => !existing.has(e.entityId));
   }
 
   async updateBible(input: {
