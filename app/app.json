@@ -16,6 +16,9 @@
     },
     "extra": {
       "proxyBaseUrl": "http://localhost:8787"
-    }
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
   }
 }
