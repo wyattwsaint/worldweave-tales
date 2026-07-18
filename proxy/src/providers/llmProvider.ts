@@ -3,7 +3,6 @@ import { z } from "zod";
 import type {
   Beat,
   CastMember,
-  SpineBeat,
   StoryBible,
   WizardAnswers,
   ArcShape,
@@ -258,12 +257,14 @@ const entitySheetSchema = z.object({
 const toStringEntry = (x: unknown): string =>
   x == null ? "" : typeof x === "string" ? x : JSON.stringify(x);
 
-/** A tolerant `string[]`: coerce each entry to a string; null/missing → []. The
- *  model sometimes returns worldState/virtuesTaught as arrays of objects. */
+/** A tolerant `string[]`: coerce each present entry to a string. An OMITTED (or
+ *  null) section stays `undefined` — NOT [] — so updateBible can fall back to the
+ *  prior bible's value instead of erasing it. The model sometimes returns
+ *  worldState/virtuesTaught as arrays of objects. */
 const stringArraySchema = z
   .array(z.unknown())
   .nullish()
-  .transform((arr) => (arr ?? []).map(toStringEntry));
+  .transform((arr) => (arr == null ? undefined : arr.map(toStringEntry)));
 
 /** Tolerant eventLog row — the model omits or renames fields freely. Only the
  *  villainResolution enum is validated (unknown values are dropped rather than
@@ -312,18 +313,16 @@ const openThreadSchema = z.array(
   }),
 );
 
-/** Tolerant against real model output: whole top-level sections default to []
- *  when the model returns only the parts it changed, and each section coerces
- *  the shapes the model tends to return (see the per-field schemas above). This
- *  keeps updateBible from HTTP-500ing while still yielding a valid StoryBible. */
+/** Tolerant against real model output: an OMITTED top-level section parses to
+ *  `undefined` (NOT []) so updateBible can fall back to the prior bible's value
+ *  rather than erasing prior canon; each present section still coerces the shapes
+ *  the model tends to return (see the per-field schemas above). This keeps
+ *  updateBible from HTTP-500ing while never silently wiping accumulated canon. */
 const storyBibleSchema = z.object({
-  entitySheets: z
-    .array(entitySheetSchema)
-    .nullish()
-    .transform((v) => v ?? []),
-  eventLog: eventLogSchema.nullish().transform((v) => v ?? []),
+  entitySheets: z.array(entitySheetSchema).nullish(),
+  eventLog: eventLogSchema.nullish(),
   worldState: stringArraySchema,
-  openThreads: openThreadSchema.nullish().transform((v) => v ?? []),
+  openThreads: openThreadSchema.nullish(),
   virtuesTaught: stringArraySchema,
 });
 
@@ -451,7 +450,18 @@ export class ApiLlmProvider implements LlmProvider {
       `string[] }. "relationships" MUST be an array of strings (e.g. ` +
       `["mentor: owl"]), never an object. Every entitySheet MUST include ` +
       `its "entityId".`;
-    return this.complete(prompt, storyBibleSchema, { retries: 1 });
+    // MERGE onto the prior bible: a section the model omitted (parsed as
+    // `undefined`) falls back to prior canon, so returning only the changed
+    // sections never wipes accumulated entitySheets/eventLog/etc. to [].
+    const parsed = await this.complete(prompt, storyBibleSchema, { retries: 1 });
+    const prior = input.priorBible;
+    return {
+      entitySheets: parsed.entitySheets ?? prior?.entitySheets ?? [],
+      eventLog: parsed.eventLog ?? prior?.eventLog ?? [],
+      worldState: parsed.worldState ?? prior?.worldState ?? [],
+      openThreads: parsed.openThreads ?? prior?.openThreads ?? [],
+      virtuesTaught: parsed.virtuesTaught ?? prior?.virtuesTaught ?? [],
+    };
   }
 }
 

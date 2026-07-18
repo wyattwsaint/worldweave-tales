@@ -233,7 +233,17 @@ export interface GenerateArcRequest {
 }
 
 export interface GeneratedCardChoice {
+  /**
+   * The retained cast member's REAL entityId — the SAME id the pipeline bucketed
+   * into `beat.dealtCardIds`. The canonized Card MUST carry this id (not the role)
+   * or the viewer's `dealtCardIds -> card` lookup misses for any real-model run
+   * whose hero entityId differs from its role (e.g. "prince-alden" vs "hero").
+   */
+  entityId: string;
   role: CardRole;
+  /** Mirrors the cast member's appearanceNote (what the variants were drawn from)
+   *  so the canonized Card's note stays consistent with its locked art. */
+  appearanceNote: string;
   /** A few variants for hero/villain-class NEW cards; parent taps to pick. */
   variantImageRefs: string[];
 }

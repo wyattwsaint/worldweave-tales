@@ -76,6 +76,29 @@ describe("generateArc — cast → dealtCardIds derivation", () => {
   });
 });
 
+describe("generateArc — hero/villain parent-pick entityId threading", () => {
+  it("threads a hero cast member's real entityId (!= role) onto its pending choice AND the beat it is dealt", async () => {
+    const spy = spyImageProvider();
+    // A REAL model names the hero "prince-alden" — its entityId is NOT "hero".
+    const cast: CastMember[] = [
+      { entityId: "prince-alden", role: "hero", appearanceNote: "a young prince in a blue cloak", firstBeatIndex: 0 },
+    ];
+    const res = await generateArc(newWorldRequest(), {
+      image: spy.provider,
+      llm: fakeLlm(cast),
+      now: () => "2026-07-17T00:00:00Z",
+    });
+
+    // The pending parent-pick carries the SAME entityId that was bucketed into
+    // dealtCardIds, so the canonized card will match ViewerScreen's byId lookup.
+    expect(res.pendingCardChoices).toHaveLength(1);
+    expect(res.pendingCardChoices[0].entityId).toBe("prince-alden");
+    expect(res.pendingCardChoices[0].appearanceNote).toBe("a young prince in a blue cloak");
+    // dealtCardIds and the choice agree — no dangling ref on a real LLM run.
+    expect(res.arc.beats[0].dealtCardIds).toContain("prince-alden");
+  });
+});
+
 describe("generateArc — new-world style path", () => {
   it("routes the new-world style through ensureStyle (never the hardcoded stub literal)", async () => {
     const spy = spyImageProvider();

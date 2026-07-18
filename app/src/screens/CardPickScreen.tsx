@@ -84,15 +84,18 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
 }
 
 /** Build a not-yet-canonized Card for a pending choice. applyCardPick locks it. */
-function draftCard(choice: GeneratedCardChoice, chosenName?: string): Card {
+export function draftCard(choice: GeneratedCardChoice, chosenName?: string): Card {
   const role: CardRole = choice.role;
   const name = chosenName?.trim() || role.charAt(0).toUpperCase() + role.slice(1);
   return {
-    entityId: role, // matches the beat dealtCardIds ("hero"/"villain")
+    // The cast member's real entityId (threaded from the proxy) — the SAME id the
+    // pipeline bucketed into beat.dealtCardIds, so the viewer's lookup matches.
+    entityId: choice.entityId,
     role,
     canonName: name,
     traits: [],
-    appearanceNote: `The chosen ${role}.`,
+    // Mirror the note the art was drawn from; fall back for the legacy stub path.
+    appearanceNote: choice.appearanceNote || `The chosen ${role}.`,
     lockedImageRef: "", // set by applyCardPick from the tapped variant
     relationships: [],
     canonizedAt: "",

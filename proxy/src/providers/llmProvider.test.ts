@@ -412,6 +412,35 @@ describe("ApiLlmProvider.updateBible", () => {
     expect(result.virtuesTaught).toEqual([]);
   });
 
+  it("keeps prior canon when the model omits a whole section (merges onto priorBible)", async () => {
+    // A model commonly returns only the sections it changed. entitySheets is
+    // omitted here — it must fall back to priorBible's value, never be wiped to [].
+    const priorBible: StoryBible = {
+      entitySheets: [
+        { entityId: "hero", facts: ["brave"], appearanceNote: "mouse", relationships: [] },
+      ],
+      eventLog: [{ arcId: "arc-0", summary: "the beginning", lessonTaught: "hope" }],
+      worldState: ["a quiet start"],
+      openThreads: [],
+      virtuesTaught: ["hope"],
+    };
+    // Model reply omits entitySheets entirely; only changed sections are present.
+    const partial = {
+      eventLog: [{ arcId: "arc-1", summary: "won", lessonTaught: "courage" }],
+      worldState: ["peace"],
+      virtuesTaught: ["hope", "courage"],
+    };
+    const { client } = fakeClient(JSON.stringify(partial));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible, beats, answers });
+    // The omitted section survives from priorBible rather than being erased.
+    expect(result.entitySheets).toEqual(priorBible.entitySheets);
+    // Sections the model DID return are taken from the model.
+    expect(result.eventLog).toEqual(partial.eventLog);
+    expect(result.virtuesTaught).toEqual(["hope", "courage"]);
+  });
+
   it("coerces worldState entries returned as objects/numbers into strings", async () => {
     const malformed = {
       entitySheets: [],

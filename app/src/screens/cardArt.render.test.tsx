@@ -155,7 +155,12 @@ describe("card art renders as a blob-backed <Image> (Viewer + CardPick)", () => 
       },
       newCanonCards: [],
       pendingCardChoices: [
-        { role: "hero", variantImageRefs: ["https://cdn/hero-a.png", "stub-image:hero#1"] },
+        {
+          entityId: "hero",
+          role: "hero",
+          appearanceNote: "the chosen hero",
+          variantImageRefs: ["https://cdn/hero-a.png", "stub-image:hero#1"],
+        },
       ],
       bible,
     };

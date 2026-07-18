@@ -39,8 +39,8 @@ export class FakeProxyClient {
     }));
 
     const pendingCardChoices: GeneratedCardChoice[] = [
-      { role: "hero", variantImageRefs: variants("hero", 3) },
-      { role: "villain", variantImageRefs: variants("villain", 3) },
+      { entityId: "hero", role: "hero", appearanceNote: "the chosen hero", variantImageRefs: variants("hero", 3) },
+      { entityId: "villain", role: "villain", appearanceNote: "the chosen villain", variantImageRefs: variants("villain", 3) },
     ];
 
     const newCanonCards: Card[] = [

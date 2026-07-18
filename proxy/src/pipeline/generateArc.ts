@@ -89,8 +89,16 @@ export async function generateArc(
     });
 
     if (needsParentPick) {
-      // Parent taps to choose; canonization happens after the pick.
-      pendingCardChoices.push({ role: e.role, variantImageRefs: imageRefs });
+      // Parent taps to choose; canonization happens after the pick. Thread the
+      // cast member's REAL entityId + appearanceNote so the canonized Card carries
+      // the SAME id already bucketed into dealtCardIds (no dangling ref on a real
+      // model whose hero entityId != "hero").
+      pendingCardChoices.push({
+        entityId: e.entityId,
+        role: e.role,
+        appearanceNote: e.appearanceNote,
+        variantImageRefs: imageRefs,
+      });
     } else {
       newCanonCards.push({
         entityId: e.entityId,
