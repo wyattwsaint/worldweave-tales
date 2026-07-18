@@ -1,5 +1,6 @@
 import { InMemoryStore, type LocalStore } from "./localStore";
 import type { ArtDownloader } from "./persistence";
+import type { BlobFs } from "./blobStore";
 
 /**
  * Process-wide storage seam.
@@ -16,6 +17,17 @@ import type { ArtDownloader } from "./persistence";
  */
 export let store: LocalStore = new InMemoryStore();
 export let artDownloader: ArtDownloader | undefined;
+/**
+ * Render-time blob filesystem — resolves a stored blob-relative art ref to an
+ * absolute `file://` URI for `<Image>`. Set by `initStore()` on device; stays
+ * undefined under vitest/node (blob refs then degrade to the text placeholder).
+ */
+export let blobFs: BlobFs | undefined;
+
+/** Wire the render-time blob fs (used by `initStore`; injectable in tests). */
+export function setBlobFs(fs: BlobFs | undefined): void {
+  blobFs = fs;
+}
 
 let ready: Promise<void> | null = null;
 
@@ -24,6 +36,7 @@ async function doInit(): Promise<void> {
     const native = await import(/* @vite-ignore */ "./nativeStore");
     store = await native.openSqliteStore();
     artDownloader = native.makeArtDownloader();
+    setBlobFs(native.expoBlobFs());
   } catch (err) {
     // Native storage unavailable (e.g. under vitest/node) — keep the in-memory
     // store so the app still runs. On device this branch is not taken.

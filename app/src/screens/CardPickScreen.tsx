@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Card, CardRole, GeneratedCardChoice } from "@wwt/domain";
 import { applyCardPick } from "../flow/applyCardPick";
 import { useNav, type CardPickParams } from "../nav/NavContext";
+import { artImageSource } from "../storage/artSource";
+import { blobFs } from "../storage/store";
 
 /**
  * Card-Pick screen. For each pending hero/villain choice the parent taps one
- * variant swatch. The refs (e.g. "stub-image:hero#0") are NOT image URLs, so
- * they render as labeled placeholder tiles — never <Image>. Once every role is
- * picked, we build the Card objects and canonize each via applyCardPick.
+ * variant swatch. Real variant art (a remote URL or downloaded blob) renders as
+ * an <Image>; a non-renderable ref (e.g. "stub-image:hero#0") degrades to a
+ * labeled text placeholder tile. Once every role is picked, we build the Card
+ * objects and canonize each via applyCardPick.
  */
 export default function CardPickScreen({ params }: { params: CardPickParams }) {
   const { navigate } = useNav();
@@ -42,13 +45,23 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
           <View style={styles.swatchRow}>
             {choice.variantImageRefs.map((ref) => {
               const on = picks[choice.role] === ref;
+              const source = artImageSource(ref, blobFs);
               return (
                 <Pressable
                   key={ref}
                   style={[styles.swatch, on && styles.swatchOn]}
                   onPress={() => setPicks((p) => ({ ...p, [choice.role]: ref }))}
                 >
-                  <Text style={[styles.swatchLabel, on && styles.swatchLabelOn]}>{ref}</Text>
+                  {source ? (
+                    <Image
+                      style={styles.swatchImage}
+                      source={source}
+                      resizeMode="cover"
+                      accessibilityLabel={`${choice.role} variant`}
+                    />
+                  ) : (
+                    <Text style={[styles.swatchLabel, on && styles.swatchLabelOn]}>{ref}</Text>
+                  )}
                   {on ? <Text style={styles.check}>✓ chosen</Text> : null}
                 </Pressable>
               );
@@ -106,6 +119,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   swatchOn: { borderColor: "#4a3f8c", backgroundColor: "#d5cff0" },
+  swatchImage: { width: "100%", height: "100%", borderRadius: 10 },
   swatchLabel: { fontSize: 12, color: "#555", textAlign: "center" },
   swatchLabelOn: { color: "#2c2560", fontWeight: "600" },
   check: { fontSize: 12, color: "#4a3f8c", fontWeight: "700" },
