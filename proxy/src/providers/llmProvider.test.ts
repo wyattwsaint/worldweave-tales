@@ -100,11 +100,10 @@ describe("ApiLlmProvider.writeArc", () => {
     const result = await provider.writeArc({ answers, shape: "quest", bible });
 
     expect(result.beats).toHaveLength(5);
-    expect(result.beats[0]).toEqual({
-      spineBeat: "setup",
-      text: "A start.",
-      dealtCardIds: ["hero"],
-    });
+    // Beats are PROSE-ONLY now — the model no longer emits dealtCardIds
+    // (the pipeline derives placement from cast.firstBeatIndex), so the fence's
+    // stray dealtCardIds must be stripped, not surfaced.
+    expect(result.beats[0]).toEqual({ spineBeat: "setup", text: "A start." });
 
     // request shape: model honored + prompt carries the shape/teaching point
     const body = create.mock.calls[0][0];
@@ -112,6 +111,74 @@ describe("ApiLlmProvider.writeArc", () => {
     const promptText = JSON.stringify(body.messages);
     expect(promptText).toContain("quest");
     expect(promptText).toContain("courage");
+  });
+
+  it("parses the merged {beats, cast} authoring reply (one call, not two)", async () => {
+    const { client, create } = fakeClient(
+      JSON.stringify({
+        beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })),
+        cast: [
+          { entityId: "hero", role: "hero", appearanceNote: "a brave mouse", firstBeatIndex: 0 },
+          { entityId: "dragon", role: "villain", appearanceNote: "green scales", firstBeatIndex: 2 },
+        ],
+      }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.writeArc({ answers, shape: "quest", bible });
+
+    expect(result.beats).toHaveLength(5);
+    expect(result.cast).toEqual([
+      { entityId: "hero", role: "hero", appearanceNote: "a brave mouse", firstBeatIndex: 0 },
+      { entityId: "dragon", role: "villain", appearanceNote: "green scales", firstBeatIndex: 2 },
+    ]);
+    // A SINGLE model round-trip produced both prose and cast.
+    expect(create).toHaveBeenCalledTimes(1);
+    // The prompt asks for both beats and cast-with-firstBeatIndex.
+    const promptText = JSON.stringify(create.mock.calls[0][0].messages);
+    expect(promptText).toContain("cast");
+    expect(promptText).toContain("firstBeatIndex");
+  });
+
+  it("defaults an empty cast when the model omits it", async () => {
+    const { client } = fakeClient(
+      JSON.stringify({
+        beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })),
+      }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+    const result = await provider.writeArc({ answers, shape: "quest", bible });
+    expect(result.cast).toEqual([]);
+  });
+
+  it("coerces a cast firstBeatIndex from a string and defaults a missing one to 0", async () => {
+    const { client } = fakeClient(
+      JSON.stringify({
+        beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })),
+        cast: [
+          { entityId: "hero", role: "hero", appearanceNote: "mouse", firstBeatIndex: "1" },
+          { entityId: "glade", role: "place", appearanceNote: "a green glade" },
+        ],
+      }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+    const result = await provider.writeArc({ answers, shape: "quest", bible });
+    expect(result.cast[0].firstBeatIndex).toBe(1);
+    expect(result.cast[1].firstBeatIndex).toBe(0);
+    expect(result.cast[1].appearanceNote).toBe("a green glade");
+  });
+
+  it("throws on a cast member with a bad role enum", async () => {
+    const { client } = fakeClient(
+      JSON.stringify({
+        beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })),
+        cast: [{ entityId: "x", role: "wizard", appearanceNote: "n", firstBeatIndex: 0 }],
+      }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+    await expect(
+      provider.writeArc({ answers, shape: "quest", bible }),
+    ).rejects.toThrow();
   });
 
   it("pins spineBeat to the exact enum literals in the prompt (no generic beat names)", async () => {
@@ -209,63 +276,6 @@ describe("ApiLlmProvider.writeArc", () => {
     const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
     await expect(
       provider.writeArc({ answers, shape: "quest", bible }),
-    ).rejects.toThrow();
-  });
-});
-
-// --- extractNewEntities --------------------------------------------------
-
-describe("ApiLlmProvider.extractNewEntities", () => {
-  it("parses entities and passes existing ids in the prompt", async () => {
-    const { client, create } = fakeClient(
-      JSON.stringify({
-        entities: [
-          { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
-        ],
-      }),
-    );
-    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
-
-    const result = await provider.extractNewEntities({
-      beats,
-      existingEntityIds: ["hero"],
-    });
-
-    expect(result).toEqual([
-      { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
-    ]);
-    const body = create.mock.calls[0][0];
-    expect(JSON.stringify(body.messages)).toContain("hero");
-  });
-
-  it("drops entities the model re-listed despite them already being canon", async () => {
-    const { client } = fakeClient(
-      JSON.stringify({
-        entities: [
-          { entityId: "hero", role: "hero", appearanceNote: "already canon" },
-          { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
-        ],
-      }),
-    );
-    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
-
-    const result = await provider.extractNewEntities({
-      beats,
-      existingEntityIds: ["hero"],
-    });
-
-    expect(result).toEqual([
-      { entityId: "dragon", role: "villain", appearanceNote: "green scales" },
-    ]);
-  });
-
-  it("throws on a bad role enum", async () => {
-    const { client } = fakeClient(
-      JSON.stringify({ entities: [{ entityId: "x", role: "wizard", appearanceNote: "n" }] }),
-    );
-    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
-    await expect(
-      provider.extractNewEntities({ beats, existingEntityIds: [] }),
     ).rejects.toThrow();
   });
 });
@@ -385,6 +395,95 @@ describe("ApiLlmProvider.updateBible", () => {
       facts: [],
       appearanceNote: "",
       relationships: [],
+    });
+  });
+
+  it("accepts a partial bible that omits whole top-level arrays", async () => {
+    // The model frequently returns only the sections it changed; the missing
+    // arrays must default to [] rather than 500 the whole generation.
+    const partial = { entitySheets: [{ entityId: "hero" }] };
+    const { client } = fakeClient(JSON.stringify(partial));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.eventLog).toEqual([]);
+    expect(result.worldState).toEqual([]);
+    expect(result.openThreads).toEqual([]);
+    expect(result.virtuesTaught).toEqual([]);
+  });
+
+  it("coerces worldState entries returned as objects/numbers into strings", async () => {
+    const malformed = {
+      entitySheets: [],
+      eventLog: [],
+      // model returned structured facts instead of the schema's string[]
+      worldState: [{ fact: "the kingdom is at peace" }, 7],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.worldState).toEqual([
+      JSON.stringify({ fact: "the kingdom is at peace" }),
+      "7",
+    ]);
+  });
+
+  it("defaults an eventLog row that omits lessonTaught/arcId/summary", async () => {
+    const malformed = {
+      entitySheets: [],
+      eventLog: [{ summary: "the arc happened" }],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.eventLog[0]).toEqual({
+      arcId: "",
+      summary: "the arc happened",
+      lessonTaught: "",
+    });
+  });
+
+  it("drops an unknown villainResolution instead of rejecting the bible", async () => {
+    const malformed = {
+      entitySheets: [],
+      eventLog: [
+        { arcId: "a1", summary: "s", lessonTaught: "courage", villainResolution: "reformed" },
+      ],
+      worldState: [],
+      openThreads: [],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.eventLog[0].villainResolution).toBeUndefined();
+  });
+
+  it("defaults an openThread row that omits resolved and its ids", async () => {
+    const malformed = {
+      entitySheets: [],
+      eventLog: [],
+      worldState: [],
+      openThreads: [{ teaser: "a door left ajar" }],
+      virtuesTaught: [],
+    };
+    const { client } = fakeClient(JSON.stringify(malformed));
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    const result = await provider.updateBible({ priorBible: bible, beats, answers });
+    expect(result.openThreads[0]).toEqual({
+      id: "",
+      teaser: "a door left ajar",
+      originArcId: "",
+      resolved: false,
     });
   });
 

@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type {
   Beat,
+  CastMember,
+  SpineBeat,
   StoryBible,
   WizardAnswers,
   ArcShape,
@@ -9,6 +11,19 @@ import type {
 } from "@wwt/domain";
 import { AGE_BANDS, INVARIANT_SPINE, GUARDRAILS } from "@wwt/domain";
 import { config, usingStubLlm } from "../config.js";
+
+/**
+ * A prose-only beat as authored by the model. Placement (`dealtCardIds`) is
+ * DERIVED by the pipeline from `cast.firstBeatIndex` — never model-emitted — so
+ * a beat can never reference a card that was dropped or never canonized.
+ */
+export type ProseBeat = Pick<Beat, "spineBeat" | "text">;
+
+/** The single authoring call's output: prose beats + a transient cast. */
+export interface AuthoredArc {
+  beats: ProseBeat[];
+  cast: CastMember[];
+}
 
 /** Fallback model if LLM_MODEL is not configured. A small/fast model (SPEC §8). */
 const DEFAULT_MODEL = "claude-haiku-4-5";
@@ -36,18 +51,17 @@ function extractJson(text: string): string {
  * is TBD (SPEC.md §8) — pick a small/fast model at build time.
  */
 export interface LlmProvider {
-  /** Write the arc's beats inside the invariant spine, honoring bible + guardrails. */
+  /**
+   * Author the arc in ONE call: prose-only beats inside the invariant spine PLUS
+   * a transient `cast` (every entity that appears — new OR reused canon — each
+   * declaring its `firstBeatIndex`). This merges the old writeArc + extractNewEntities
+   * calls; the pipeline then diffs cast vs canon and DERIVES `dealtCardIds`.
+   */
   writeArc(input: {
     answers: WizardAnswers;
     shape: ArcShape;
     bible?: StoryBible;
-  }): Promise<{ beats: Beat[] }>;
-
-  /** Identify card-worthy NEW entities the story introduced (capped by caller). */
-  extractNewEntities(input: {
-    beats: Beat[];
-    existingEntityIds: string[];
-  }): Promise<Array<{ entityId: string; role: CardRole; appearanceNote: string }>>;
+  }): Promise<AuthoredArc>;
 
   /** After a book, summarize the arc + update the bible (returns the new bible). */
   updateBible(input: {
@@ -59,21 +73,21 @@ export interface LlmProvider {
 
 /** STUB — deterministic placeholder prose so the pipeline runs end-to-end. */
 export class StubLlmProvider implements LlmProvider {
-  async writeArc(input: { answers: WizardAnswers; shape: ArcShape }): Promise<{ beats: Beat[] }> {
+  async writeArc(input: { answers: WizardAnswers; shape: ArcShape }): Promise<AuthoredArc> {
     const age = AGE_BANDS[input.answers.ageBand];
     // One beat per spine step; pad to the age's beat count with journey beats.
-    const beats: Beat[] = INVARIANT_SPINE.map((spineBeat) => ({
+    const beats: ProseBeat[] = INVARIANT_SPINE.map((spineBeat) => ({
       spineBeat,
       text: `[stub ${spineBeat}] a ${input.shape} story for ages ${age.approxAges}.`,
-      dealtCardIds: [],
     }));
-    return { beats };
-  }
-  async extractNewEntities() {
-    return [
-      { entityId: "hero", role: "hero" as CardRole, appearanceNote: "[stub hero]" },
-      { entityId: "villain", role: "villain" as CardRole, appearanceNote: "[stub villain]" },
+    // A hero (beat 0) and a villain (entering when the virtue is tested) so the
+    // downstream diff/cap/derivation has representative cast to work with.
+    const virtueTestedIndex = Math.max(0, INVARIANT_SPINE.indexOf("virtue-tested"));
+    const cast: CastMember[] = [
+      { entityId: "hero", role: "hero", appearanceNote: "[stub hero]", firstBeatIndex: 0 },
+      { entityId: "villain", role: "villain", appearanceNote: "[stub villain]", firstBeatIndex: virtueTestedIndex },
     ];
+    return { beats, cast };
   }
   async updateBible(input: { priorBible: StoryBible | undefined }): Promise<StoryBible> {
     const b = input.priorBible ?? {
@@ -133,20 +147,54 @@ function defaultClient(cfg: LlmConfig): LlmClient {
 
 // --- response schemas (also the malformed-response guard) ------------------
 
-const beatSchema = z.object({
+/** A PROSE-ONLY beat — no dealtCardIds (the pipeline derives placement). Extra
+ *  keys the model may still emit (e.g. a stray dealtCardIds) are stripped. */
+const proseBeatSchema = z.object({
   spineBeat: z.enum(INVARIANT_SPINE),
   text: z.string(),
-  dealtCardIds: z.array(z.string()),
 });
+
+const cardRoleSchema = z.enum([
+  "hero",
+  "villain",
+  "companion",
+  "place",
+  "artifact",
+  "other",
+]);
+
+/** A transient cast member. `firstBeatIndex` is coerced tolerantly (number,
+ *  numeric string, or missing → 0); the pipeline clamps it to a real beat. */
+const castMemberSchema = z.object({
+  entityId: z.string(),
+  role: cardRoleSchema,
+  appearanceNote: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? ""),
+  firstBeatIndex: z.unknown().transform((v) => {
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? Math.trunc(n) : 0;
+  }),
+});
+
 /**
- * Beats must cover the whole invariant spine, in order. Completeness guarantees
- * the safe, resolved ending ("good-triumphs") is present; order-preservation
- * keeps the spine structural rather than a suggestion the model can shuffle.
- * (Multiple beats may map to the same spine step, so we check non-decreasing
- * order + presence, not exact one-per-step equality.) SPEC.md §8.
+ * The single authoring reply: prose beats + a transient cast. Beats must cover
+ * the whole invariant spine, in order — completeness guarantees the safe,
+ * resolved ending ("good-triumphs") is present; order-preservation keeps the
+ * spine structural rather than a suggestion the model can shuffle. (Multiple
+ * beats may map to the same spine step, so we check non-decreasing order +
+ * presence, not exact one-per-step equality.) `cast` defaults to [] when the
+ * model omits it. SPEC.md §8.
  */
-const writeArcSchema = z
-  .object({ beats: z.array(beatSchema) })
+const authoredArcSchema = z
+  .object({
+    beats: z.array(proseBeatSchema),
+    cast: z
+      .array(castMemberSchema)
+      .nullish()
+      .transform((v) => v ?? []),
+  })
   .superRefine((val, ctx) => {
     for (const step of INVARIANT_SPINE) {
       if (!val.beats.some((b) => b.spineBeat === step)) {
@@ -167,24 +215,6 @@ const writeArcSchema = z
       }
     }
   });
-
-const cardRoleSchema = z.enum([
-  "hero",
-  "villain",
-  "companion",
-  "place",
-  "artifact",
-  "other",
-]);
-const extractSchema = z.object({
-  entities: z.array(
-    z.object({
-      entityId: z.string(),
-      role: cardRoleSchema,
-      appearanceNote: z.string(),
-    }),
-  ),
-});
 
 /** One relationship as a string: pass strings through, JSON-stringify anything
  *  else (the model sometimes returns `{entityId, relation}` objects). */
@@ -222,28 +252,79 @@ const entitySheetSchema = z.object({
   relationships: relationshipsSchema,
 });
 
+/** A tolerant `string` field: pass strings through, coerce anything else the
+ *  model returns (a number, or a structured object) to a stable string, and
+ *  treat null/missing as empty. Mirrors `relToString`. */
+const toStringEntry = (x: unknown): string =>
+  x == null ? "" : typeof x === "string" ? x : JSON.stringify(x);
+
+/** A tolerant `string[]`: coerce each entry to a string; null/missing → []. The
+ *  model sometimes returns worldState/virtuesTaught as arrays of objects. */
+const stringArraySchema = z
+  .array(z.unknown())
+  .nullish()
+  .transform((arr) => (arr ?? []).map(toStringEntry));
+
+/** Tolerant eventLog row — the model omits or renames fields freely. Only the
+ *  villainResolution enum is validated (unknown values are dropped rather than
+ *  rejecting the whole bible). */
+const eventLogSchema = z.array(
+  z.object({
+    arcId: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    summary: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    lessonTaught: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    villainResolution: z
+      .enum(["redeemed", "defeated", "banished", "befriended"])
+      .nullish()
+      .catch(undefined)
+      .transform((v) => v ?? undefined),
+  }),
+);
+
+/** Tolerant openThread row — ids default to empty, `resolved` coerces to a bool
+ *  (null/missing → false). */
+const openThreadSchema = z.array(
+  z.object({
+    id: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    teaser: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    originArcId: z
+      .string()
+      .nullish()
+      .transform((v) => v ?? ""),
+    resolved: z
+      .unknown()
+      .transform((v) => v === true),
+  }),
+);
+
+/** Tolerant against real model output: whole top-level sections default to []
+ *  when the model returns only the parts it changed, and each section coerces
+ *  the shapes the model tends to return (see the per-field schemas above). This
+ *  keeps updateBible from HTTP-500ing while still yielding a valid StoryBible. */
 const storyBibleSchema = z.object({
-  entitySheets: z.array(entitySheetSchema),
-  eventLog: z.array(
-    z.object({
-      arcId: z.string(),
-      summary: z.string(),
-      lessonTaught: z.string(),
-      villainResolution: z
-        .enum(["redeemed", "defeated", "banished", "befriended"])
-        .optional(),
-    }),
-  ),
-  worldState: z.array(z.string()),
-  openThreads: z.array(
-    z.object({
-      id: z.string(),
-      teaser: z.string(),
-      originArcId: z.string(),
-      resolved: z.boolean(),
-    }),
-  ),
-  virtuesTaught: z.array(z.string()),
+  entitySheets: z
+    .array(entitySheetSchema)
+    .nullish()
+    .transform((v) => v ?? []),
+  eventLog: eventLogSchema.nullish().transform((v) => v ?? []),
+  worldState: stringArraySchema,
+  openThreads: openThreadSchema.nullish().transform((v) => v ?? []),
+  virtuesTaught: stringArraySchema,
 });
 
 const SYSTEM_PROMPT =
@@ -319,7 +400,7 @@ export class ApiLlmProvider implements LlmProvider {
     answers: WizardAnswers;
     shape: ArcShape;
     bible?: StoryBible;
-  }): Promise<{ beats: Beat[] }> {
+  }): Promise<AuthoredArc> {
     const age = AGE_BANDS[input.answers.ageBand];
     const prompt =
       `Write the beats of a "${input.shape}" story for ages ${age.approxAges} ` +
@@ -328,8 +409,17 @@ export class ApiLlmProvider implements LlmProvider {
       `${INVARIANT_SPINE.join(", ")}.\n` +
       `Wizard answers: ${JSON.stringify(input.answers)}\n` +
       `Story Bible (canon to honor): ${JSON.stringify(input.bible ?? null)}\n` +
-      `Return JSON: { "beats": [ { "spineBeat": <label>, "text": string, ` +
-      `"dealtCardIds": string[] } ] }.\n` +
+      `Also list the CAST: every character, place, or artifact that appears — ` +
+      `whether newly introduced OR reused from the Story Bible canon above. For ` +
+      `each, give its "entityId" (reuse the SAME id for a canon entity), "role", ` +
+      `a short "appearanceNote", and "firstBeatIndex" = the 0-based index of the ` +
+      `EARLIEST beat it appears in.\n` +
+      `Return JSON: { "beats": [ { "spineBeat": <label>, "text": string } ], ` +
+      `"cast": [ { "entityId": string, "role": ` +
+      `"hero"|"villain"|"companion"|"place"|"artifact"|"other", ` +
+      `"appearanceNote": string, "firstBeatIndex": number } ] }.\n` +
+      `Do NOT put card placement on the beats — the app derives which cards are ` +
+      `dealt from each cast member's "firstBeatIndex".\n` +
       `Each beat's "spineBeat" MUST be exactly one of these literal values: ` +
       `${INVARIANT_SPINE.map((s) => `"${s}"`).join(", ")}. Do NOT use any ` +
       `other names (e.g. NOT "rising-action", "climax", "resolution", ` +
@@ -337,29 +427,7 @@ export class ApiLlmProvider implements LlmProvider {
       `order listed; if you write extra beats between milestones, tag each ` +
       `with the most recent spine value it belongs to (so the "spineBeat" ` +
       `values are non-decreasing along the spine).`;
-    return this.complete(prompt, writeArcSchema, { retries: 1 });
-  }
-
-  async extractNewEntities(input: {
-    beats: Beat[];
-    existingEntityIds: string[];
-  }): Promise<Array<{ entityId: string; role: CardRole; appearanceNote: string }>> {
-    const prompt =
-      `Identify card-worthy NEW entities introduced by this story that are NOT ` +
-      `already canon. Existing (reused, do NOT list) entityIds: ` +
-      `${JSON.stringify(input.existingEntityIds)}.\n` +
-      `Beats: ${JSON.stringify(input.beats)}\n` +
-      `Return JSON: { "entities": [ { "entityId": string, "role": ` +
-      `"hero"|"villain"|"companion"|"place"|"artifact"|"other", ` +
-      `"appearanceNote": string } ] }`;
-    const { entities } = await this.complete(prompt, extractSchema, {
-      retries: 1,
-    });
-    // Defense in depth: the prompt asks the model to exclude canon entities, but
-    // a disobedient reply must not reintroduce a locked entity as "new" (that
-    // would mint a duplicate card and pay image cost for existing canon).
-    const existing = new Set(input.existingEntityIds);
-    return entities.filter((e) => !existing.has(e.entityId));
+    return this.complete(prompt, authoredArcSchema, { retries: 1 });
   }
 
   async updateBible(input: {
