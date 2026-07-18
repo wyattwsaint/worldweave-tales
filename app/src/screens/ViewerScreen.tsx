@@ -2,12 +2,15 @@ import React, { useEffect } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Card, Storyworld } from "@wwt/domain";
 import { useNav, type ViewerParams } from "../nav/NavContext";
-import { store } from "../storage/store";
+import { artDownloader, store, whenStoreReady } from "../storage/store";
+import { persistFinishedWorld } from "../storage/persistence";
 
 /**
  * Viewer. Renders the finished Arc one section per Beat (spine label + text),
  * with each beat's dealt cards shown as labeled placeholder tiles (refs are not
- * real image URLs, so no <Image>). Persists the assembled world on mount.
+ * real image URLs, so no <Image>). Durably persists the world AND its arc on
+ * mount — downloading each card's ephemeral remote art to a local blob first,
+ * so a re-read survives the Recraft URL expiring (SPEC §2.22, §5).
  */
 export default function ViewerScreen({ params }: { params: ViewerParams }) {
   const { navigate } = useNav();
@@ -25,7 +28,10 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
       arcIds: [arc.id],
       createdAt: arc.createdAt,
     };
-    void store.saveWorld(world);
+    void (async () => {
+      await whenStoreReady();
+      await persistFinishedWorld(world, arc, { store, downloadArt: artDownloader });
+    })();
   }, [arc, cards, bible]);
 
   return (
