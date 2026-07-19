@@ -15,7 +15,7 @@ import { artImageSource } from "../storage/artSource";
  * so a re-read survives the Recraft URL expiring (SPEC §2.22, §5).
  */
 export default function ViewerScreen({ params }: { params: ViewerParams }) {
-  const { navigate } = useNav();
+  const { navigate, goHome } = useNav();
   const { arc, cards, bible } = params;
   const byId = new Map<string, Card>(cards.map((c) => [c.entityId, c]));
 
@@ -38,6 +38,9 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <Pressable style={styles.shelfLink} onPress={goHome}>
+        <Text style={styles.shelfLinkText}>‹ Shelf</Text>
+      </Pressable>
       <Text style={styles.title}>Your Tale</Text>
       <Text style={styles.meta}>
         {arc.shape} · {arc.ageBand} ·{" "}
@@ -93,6 +96,8 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
 
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 64, gap: 18 },
+  shelfLink: { alignSelf: "flex-start" },
+  shelfLinkText: { fontSize: 15, fontWeight: "700", color: "#4a3f8c" },
   title: { fontSize: 28, fontWeight: "700", color: "#1a1a2e" },
   meta: { fontSize: 14, color: "#666", textTransform: "capitalize" },
   page: {

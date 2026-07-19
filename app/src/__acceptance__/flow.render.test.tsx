@@ -77,6 +77,11 @@ async function runFlow(overrides?: { world?: string; hero?: string; villain?: st
     root = TestRenderer.create(<App client={new FakeProxyClient()} />);
   });
 
+  // --- SHELF: the app opens on the Library bookshelf (#8); enter the wizard. ---
+  await act(async () => {
+    pressableByLabel(root, "New Story").props.onPress();
+  });
+
   // --- WIZARD: pick a tier that exposes all three story fields, fill them, submit.
   // The wizard is now a generic graph renderer: villain is a Solid/Epic node, so
   // select "solid" first to reveal it, then address each free-text node by its
@@ -129,15 +134,21 @@ async function runFlow(overrides?: { world?: string; hero?: string; villain?: st
 describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
   afterEach(() => {
     // Reset the module-singleton store between tests so each run is isolated.
-    (store as unknown as { worlds: Map<string, unknown> }).worlds.clear();
+    const bag = store as unknown as { worlds: Map<string, unknown>; arcs: Map<string, unknown> };
+    bag.worlds.clear();
+    bag.arcs.clear();
   });
 
-  check("A1 Wizard shows the 'New Story' screen with the graph-driven story fields", () => {
-    // Rendered synchronously; use a fresh mount. At the seeded Beginner tier the
-    // world + hero free-text nodes are visible; villain is a Solid/Epic node.
+  check("A1 App opens on the shelf; ＋ New Story shows the graph-driven wizard fields", async () => {
+    // Bookshelf-first (#8): the wizard sits behind the shelf's CTA. At the
+    // seeded Beginner tier the world + hero free-text nodes are visible;
+    // villain is a Solid/Epic node.
     let root!: ReactTestRenderer;
-    act(() => {
+    await act(async () => {
       root = TestRenderer.create(<App client={new FakeProxyClient()} />);
+    });
+    await act(async () => {
+      pressableByLabel(root, "New Story").props.onPress();
     });
     expect(allText(root.root)).toContain("New Story");
     expect(textInputByTestID(root, "world")).toBeTruthy();

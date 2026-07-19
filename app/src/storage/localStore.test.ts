@@ -34,4 +34,18 @@ describe("InMemoryStore — arc methods", () => {
     expect(await store.getWorld(world.id)).toEqual(world);
     expect(await store.listWorlds()).toEqual([world]);
   });
+
+  it("listWorlds returns newest first (same contract as SqliteStore's created_at DESC)", async () => {
+    const store = new InMemoryStore();
+    await store.saveWorld(sampleWorld({ id: "old", createdAt: "2026-07-01T00:00:00.000Z" }));
+    await store.saveWorld(sampleWorld({ id: "new", createdAt: "2026-07-15T00:00:00.000Z" }));
+    expect((await store.listWorlds()).map((w) => w.id)).toEqual(["new", "old"]);
+  });
+
+  it("listArcs returns newest first (same contract as SqliteStore's created_at DESC)", async () => {
+    const store = new InMemoryStore();
+    await store.saveArc(sampleArc({ id: "a-old", worldId: "w1", createdAt: "2026-07-01T00:00:00.000Z" }));
+    await store.saveArc(sampleArc({ id: "a-new", worldId: "w1", createdAt: "2026-07-15T00:00:00.000Z" }));
+    expect((await store.listArcs("w1")).map((a) => a.id)).toEqual(["a-new", "a-old"]);
+  });
 });

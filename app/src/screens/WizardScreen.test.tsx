@@ -47,16 +47,25 @@ function pressableByLabel(root: ReactTestRenderer, label: string): Node {
   return hits.sort((a, b) => a.findAll(() => true).length - b.findAll(() => true).length)[0];
 }
 
+/** The app opens on the Library shelf (#8); enter the wizard via its CTA. */
+async function mountWizard(client?: FakeProxyClient) {
+  let root!: ReactTestRenderer;
+  await act(async () => {
+    root = TestRenderer.create(client ? <App client={client} /> : <App />);
+  });
+  await act(async () => {
+    pressableByLabel(root, "New Story").props.onPress();
+  });
+  return root;
+}
+
 describe("WizardScreen (generic graph renderer)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("(a) Beginner shows the beginner node set and NOT solid/epic-only nodes", () => {
-    let root!: ReactTestRenderer;
-    act(() => {
-      root = TestRenderer.create(<App />);
-    });
+  it("(a) Beginner shows the beginner node set and NOT solid/epic-only nodes", async () => {
+    const root = await mountWizard();
     const text = allText(root.root);
     // Beginner spine + free-text.
     expect(text).toContain("Tier");
@@ -72,11 +81,8 @@ describe("WizardScreen (generic graph renderer)", () => {
     expect(text).not.toContain("Directness");
   });
 
-  it("(b) switching the tier to epic reveals epic-only nodes", () => {
-    let root!: ReactTestRenderer;
-    act(() => {
-      root = TestRenderer.create(<App />);
-    });
+  it("(b) switching the tier to epic reveals epic-only nodes", async () => {
+    const root = await mountWizard();
     act(() => {
       pressableByLabel(root, "epic").props.onPress();
     });
@@ -90,10 +96,7 @@ describe("WizardScreen (generic graph renderer)", () => {
   it("(c) a full Beginner run submits, calls generateArc, and reaches Card-Pick", async () => {
     const fake = new FakeProxyClient();
     const spy = vi.spyOn(fake, "generateArc");
-    let root!: ReactTestRenderer;
-    await act(async () => {
-      root = TestRenderer.create(<App client={fake} />);
-    });
+    const root = await mountWizard(fake);
     // Beginner: tier + ageBand are seeded; leave world/hero as "surprise me".
     await act(async () => {
       await pressableByLabel(root, "Weave the tale").props.onPress();
@@ -108,10 +111,7 @@ describe("WizardScreen (generic graph renderer)", () => {
   it("(d) a Solid run with a free-text situation yields a situation teaching point (virtue default does NOT clobber)", async () => {
     const fake = new FakeProxyClient();
     const spy = vi.spyOn(fake, "generateArc");
-    let root!: ReactTestRenderer;
-    await act(async () => {
-      root = TestRenderer.create(<App client={fake} />);
-    });
+    const root = await mountWizard(fake);
     // Move to Solid (offers the free-text teaching box), then fill the situation.
     await act(async () => {
       pressableByLabel(root, "solid").props.onPress();

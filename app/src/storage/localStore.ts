@@ -24,7 +24,9 @@ export class InMemoryStore implements LocalStore {
   private arcs = new Map<string, Arc>();
 
   async listWorlds() {
-    return [...this.worlds.values()];
+    // Newest first — the same contract as SqliteStore's `created_at DESC`,
+    // which the Library shelf relies on.
+    return [...this.worlds.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async getWorld(id: string) {
     return this.worlds.get(id);
@@ -40,6 +42,8 @@ export class InMemoryStore implements LocalStore {
     return this.arcs.get(id);
   }
   async listArcs(worldId: string) {
-    return [...this.arcs.values()].filter((a) => a.worldId === worldId);
+    return [...this.arcs.values()]
+      .filter((a) => a.worldId === worldId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 }
