@@ -1,9 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Card, Storyworld } from "@wwt/domain";
 import { useNav, type ViewerParams } from "../nav/NavContext";
 import { artDownloader, blobFs, store, whenStoreReady } from "../storage/store";
-import { persistFinishedWorld } from "../storage/persistence";
+import { arcTitle, persistFinishedWorld } from "../storage/persistence";
 import { artImageSource } from "../storage/artSource";
 
 /**
@@ -15,14 +15,21 @@ import { artImageSource } from "../storage/artSource";
  * so a re-read survives the Recraft URL expiring (SPEC §2.22, §5).
  */
 export default function ViewerScreen({ params }: { params: ViewerParams }) {
-  const { navigate } = useNav();
-  const { arc, cards, bible } = params;
+  const { navigate, goHome } = useNav();
+  const { arc, cards, bible, source } = params;
   const byId = new Map<string, Card>(cards.map((c) => [c.entityId, c]));
+  const [persistError, setPersistError] = useState<string | null>(null);
+  /** The in-flight on-mount persist; ‹ Shelf awaits it so the shelf never misses the story. */
+  const persistDone = useRef<Promise<void> | null>(null);
+  /** Whether that persist ultimately failed — the state above can't be read after an await. */
+  const persistFailed = useRef(false);
 
   useEffect(() => {
+    if (source === "library") return; // already shelved — a re-save would clobber the stored world
+    let cancelled = false; // guards the setState below if the Viewer unmounts mid-save
     const world: Storyworld = {
       id: arc.worldId,
-      name: arc.worldId,
+      name: arcTitle(arc),
       artStyle: { presetId: "pencil-sketch", displayName: "Imaginative Pencil-Sketch" },
       defaultAgeBand: arc.ageBand,
       deck: cards,
@@ -30,14 +37,38 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
       arcIds: [arc.id],
       createdAt: arc.createdAt,
     };
-    void (async () => {
+    persistDone.current = (async () => {
       await whenStoreReady();
       await persistFinishedWorld(world, arc, { store, downloadArt: artDownloader });
-    })();
-  }, [arc, cards, bible]);
+    })().catch(() => {
+      persistFailed.current = true;
+      if (!cancelled) {
+        setPersistError("Couldn't save this tale to your shelf — it may be gone when you return.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [arc, cards, bible, source]);
+
+  /**
+   * Waits out an in-flight save before going home. If that save failed and the
+   * tap landed BEFORE the inline error was showing, stay on the Viewer so the
+   * failure is actually seen (never a silent hop home) — the next ‹ tap, with
+   * the error now on screen, does leave. Happy path: await, then home.
+   */
+  async function backToShelf() {
+    const errorWasVisible = persistError !== null;
+    await persistDone.current;
+    if (persistFailed.current && !errorWasVisible) return;
+    goHome();
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <Pressable style={styles.shelfLink} onPress={() => void backToShelf()}>
+        <Text style={styles.shelfLinkText}>‹ Shelf</Text>
+      </Pressable>
       <Text style={styles.title}>Your Tale</Text>
       <Text style={styles.meta}>
         {arc.shape} · {arc.ageBand} ·{" "}
@@ -45,6 +76,8 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
           ? arc.teachingPoint.virtue
           : arc.teachingPoint.description}
       </Text>
+
+      {persistError ? <Text style={styles.error}>{persistError}</Text> : null}
 
       {arc.beats.map((beat, i) => (
         <View key={`${beat.spineBeat}-${i}`} style={styles.page}>
@@ -93,8 +126,11 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
 
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 64, gap: 18 },
+  shelfLink: { alignSelf: "flex-start" },
+  shelfLinkText: { fontSize: 15, fontWeight: "700", color: "#4a3f8c" },
   title: { fontSize: 28, fontWeight: "700", color: "#1a1a2e" },
   meta: { fontSize: 14, color: "#666", textTransform: "capitalize" },
+  error: { fontSize: 14, color: "#a13333" },
   page: {
     gap: 10,
     padding: 16,

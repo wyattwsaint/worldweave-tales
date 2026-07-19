@@ -14,6 +14,16 @@ export interface PersistDeps {
   downloadArt?: ArtDownloader;
 }
 
+/**
+ * The ONE human-facing story label, derived from the teaching point. Used as
+ * the arc's Library-list title (SqliteStore's `title` column) and as the
+ * persisted world's display name — never the internal `world-<id>`.
+ */
+export function arcTitle(arc: Arc): string {
+  const tp = arc.teachingPoint;
+  return tp.kind === "virtue" ? tp.virtue : tp.description;
+}
+
 const HTTP_REF = /^https?:\/\//i;
 
 /** `.png` from `https://cdn/x.png?sig=1`; falls back to `.img`. */

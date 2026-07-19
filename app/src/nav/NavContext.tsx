@@ -4,11 +4,12 @@ import type { Arc, Card, GenerateArcResponse, StoryBible, WizardAnswers } from "
 /**
  * Tiny hand-rolled navigator. No external nav library — just a discriminated
  * union of screens with typed params, held in React state and exposed via a
- * context + {@link useNav} hook. Enough for the Slice-1 happy-path flow:
- * Wizard -> Card-Pick -> Viewer.
+ * context + {@link useNav} hook. Enough for the bookshelf-first flow:
+ * Library (home) -> Wizard -> Card-Pick -> Viewer -> back to the shelf.
  */
 
 export type NavState =
+  | { screen: "library" }
   | { screen: "wizard" }
   | { screen: "cardpick"; params: CardPickParams }
   | { screen: "viewer"; params: ViewerParams };
@@ -26,19 +27,28 @@ export interface ViewerParams {
   cards: Card[];
   /** The Story Bible generated for this arc, persisted with the finished world. */
   bible: StoryBible;
+  /**
+   * Set when re-opened from the Library shelf: the world is already persisted,
+   * so the Viewer must not save again (the upsert would clobber the stored
+   * world). Absent on the fresh CardPick -> Viewer creation path.
+   */
+  source?: "library";
 }
 
 interface NavContextValue {
   state: NavState;
   navigate: (next: NavState) => void;
+  /** Return to the Library shelf — the app's home surface. */
+  goHome: () => void;
 }
 
 const NavContext = createContext<NavContextValue | null>(null);
 
 export function NavProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<NavState>({ screen: "wizard" });
+  const [state, setState] = useState<NavState>({ screen: "library" });
   const navigate = useCallback((next: NavState) => setState(next), []);
-  const value = useMemo(() => ({ state, navigate }), [state, navigate]);
+  const goHome = useCallback(() => navigate({ screen: "library" }), [navigate]);
+  const value = useMemo(() => ({ state, navigate, goHome }), [state, navigate, goHome]);
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
 }
 

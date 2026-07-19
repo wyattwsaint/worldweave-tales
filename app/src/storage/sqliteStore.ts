@@ -1,5 +1,6 @@
 import type { Arc, Storyworld } from "@wwt/domain";
-import type { LocalStore } from "./localStore";
+import { worldSummaryOf, type LocalStore, type WorldSummary } from "./localStore";
+import { arcTitle } from "./persistence";
 
 /**
  * The slice of expo-sqlite's `SQLiteDatabase` this store uses. Declaring it
@@ -25,6 +26,11 @@ export interface SqlDatabase {
 interface Migration {
   version: number;
   up: string;
+  /**
+   * Optional data backfill run after `up`, before `user_version` advances —
+   * for schema changes whose new columns must be derived from existing rows.
+   */
+  backfill?: (db: SqlDatabase) => Promise<void>;
 }
 
 /**
@@ -58,14 +64,28 @@ const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE arcs ADD COLUMN title TEXT;
       CREATE INDEX idx_arcs_world ON arcs(world_id);
     `,
+    // The shelf reads ONLY cover_ref, so pre-v2 rows must have it derived from
+    // their payloads (the exact projection worldSummaryOf defines) or their
+    // covers vanish. A row whose payload no longer parses stays NULL — a
+    // missing thumb, never a failed migration.
+    backfill: async (db) => {
+      const rows = await db.getAllAsync<{ id: string; payload_json: string }>(
+        "SELECT id, payload_json FROM storyworlds",
+      );
+      for (const row of rows) {
+        let coverRef: string | null;
+        try {
+          coverRef = worldSummaryOf(JSON.parse(row.payload_json) as Storyworld).coverRef;
+        } catch {
+          continue; // corrupt/unshaped payload: leave cover_ref NULL
+        }
+        if (coverRef !== null) {
+          await db.runAsync("UPDATE storyworlds SET cover_ref = ? WHERE id = ?", [coverRef, row.id]);
+        }
+      }
+    },
   },
 ];
-
-/** A human-facing label for the Library list, derived from the teaching point. */
-function arcTitle(arc: Arc): string {
-  const tp = arc.teachingPoint;
-  return tp.kind === "virtue" ? tp.virtue : tp.description;
-}
 
 /**
  * Production `LocalStore` backed by SQLite. Hybrid rows (ADR-0001): a few
@@ -90,6 +110,7 @@ export class SqliteStore implements LocalStore {
     for (const m of MIGRATIONS) {
       if (m.version > current) {
         await db.execAsync(m.up);
+        await m.backfill?.(db);
         // PRAGMA can't be parameterized; the version is a trusted integer literal.
         await db.execAsync(`PRAGMA user_version = ${m.version}`);
       }
@@ -97,7 +118,7 @@ export class SqliteStore implements LocalStore {
   }
 
   async saveWorld(world: Storyworld): Promise<void> {
-    const coverRef = world.deck[0]?.lockedImageRef ?? null;
+    const { coverRef } = worldSummaryOf(world);
     await this.db.runAsync(
       `INSERT INTO storyworlds (id, name, created_at, cover_ref, payload_json)
        VALUES (?, ?, ?, ?, ?)
@@ -118,11 +139,20 @@ export class SqliteStore implements LocalStore {
     return row ? (JSON.parse(row.payload_json) as Storyworld) : undefined;
   }
 
-  async listWorlds(): Promise<Storyworld[]> {
-    const rows = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM storyworlds ORDER BY created_at DESC",
-    );
-    return rows.map((r) => JSON.parse(r.payload_json) as Storyworld);
+  async listWorldSummaries(): Promise<WorldSummary[]> {
+    // Indexed columns only — the shelf never pays for a payload parse.
+    const rows = await this.db.getAllAsync<{
+      id: string;
+      name: string;
+      created_at: string;
+      cover_ref: string | null;
+    }>("SELECT id, name, created_at, cover_ref FROM storyworlds ORDER BY created_at DESC");
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      createdAt: r.created_at,
+      coverRef: r.cover_ref,
+    }));
   }
 
   async saveArc(arc: Arc): Promise<void> {

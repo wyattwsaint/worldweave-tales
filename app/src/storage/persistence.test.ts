@@ -1,7 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryStore } from "./localStore";
-import { persistFinishedWorld } from "./persistence";
+import { arcTitle, persistFinishedWorld } from "./persistence";
 import { sampleArc, sampleCard, sampleWorld } from "./testFixtures";
+
+describe("arcTitle", () => {
+  it("derives the human-facing label from the teaching point", () => {
+    expect(arcTitle(sampleArc())).toBe("courage");
+    expect(
+      arcTitle(
+        sampleArc({
+          teachingPoint: { kind: "situation", description: "A new baby brother", heavy: false },
+        }),
+      ),
+    ).toBe("A new baby brother");
+  });
+});
 
 describe("persistFinishedWorld", () => {
   it("saves the world and its arc", async () => {

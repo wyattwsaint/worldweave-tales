@@ -67,7 +67,7 @@ describe("SqliteStore", () => {
     // in-memory Map, this read would come back empty.
     const { store: reader } = await openStore(path);
     expect(await reader.getWorld(world.id)).toEqual(world);
-    expect(await reader.listWorlds()).toEqual([world]);
+    expect((await reader.listWorldSummaries()).map((s) => s.id)).toEqual([world.id]);
   });
 
   it("persists an Arc across a fresh handle and lists by world", async () => {
@@ -91,17 +91,46 @@ describe("SqliteStore", () => {
     const { store } = await openStore(path);
     await store.saveWorld(sampleWorld({ name: "First" }));
     await store.saveWorld(sampleWorld({ name: "Second" }));
-    const worlds = await store.listWorlds();
+    const worlds = await store.listWorldSummaries();
     expect(worlds).toHaveLength(1);
     expect(worlds[0].name).toBe("Second");
   });
 
-  it("listWorlds returns newest first (created_at DESC)", async () => {
+  it("listWorldSummaries returns newest first (created_at DESC)", async () => {
     const path = tempDbPath();
     const { store } = await openStore(path);
     await store.saveWorld(sampleWorld({ id: "old", createdAt: "2026-01-01T00:00:00.000Z" }));
     await store.saveWorld(sampleWorld({ id: "new", createdAt: "2026-07-01T00:00:00.000Z" }));
-    expect((await store.listWorlds()).map((w) => w.id)).toEqual(["new", "old"]);
+    expect((await store.listWorldSummaries()).map((w) => w.id)).toEqual(["new", "old"]);
+  });
+
+  it("listWorldSummaries projects the shelf columns — no payload parse", async () => {
+    const path = tempDbPath();
+    const { store, db } = await openStore(path);
+    await store.saveWorld(sampleWorld()); // deck[0].lockedImageRef = "blobs/hero-1.png"
+    await store.saveWorld(
+      sampleWorld({
+        id: "deckless",
+        name: "Brackenford",
+        createdAt: "2026-07-19T00:00:00.000Z",
+        deck: [],
+      }),
+    );
+
+    expect(await store.listWorldSummaries()).toEqual([
+      { id: "deckless", name: "Brackenford", createdAt: "2026-07-19T00:00:00.000Z", coverRef: null },
+      {
+        id: "world-willowmere",
+        name: "Willowmere",
+        createdAt: "2026-07-18T00:00:00.000Z",
+        coverRef: "blobs/hero-1.png",
+      },
+    ]);
+
+    // Straight from the indexed columns: even a corrupted payload cannot break
+    // the shelf listing, because the projection never JSON.parses it.
+    await db.runAsync("UPDATE storyworlds SET payload_json = 'not json'");
+    expect(await store.listWorldSummaries()).toHaveLength(2);
   });
 
   it("migrates an old (v1) database forward without data loss", async () => {
@@ -131,12 +160,56 @@ describe("SqliteStore", () => {
     // 2. user_version advanced to the latest.
     const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
     expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
-    // 3. The v2 summary columns now exist (querying them does not throw).
+    // 3. The v2 migration BACKFILLED cover_ref from the payload (same
+    // derivation as worldSummaryOf: deck[0]?.lockedImageRef) — otherwise every
+    // pre-v2 world loses its shelf thumbnail forever, because the shelf reads
+    // only the indexed column.
     const row = await db.getFirstAsync<{ cover_ref: string | null }>(
       "SELECT cover_ref FROM storyworlds WHERE id = ?",
       ["legacy-world"],
     );
-    expect(row).not.toBeNull();
+    expect(row?.cover_ref).toBe("blobs/hero-1.png");
+    // 4. And the shelf projection itself now shows the legacy cover.
+    expect(await store.listWorldSummaries()).toEqual([
+      expect.objectContaining({ id: "legacy-world", coverRef: "blobs/hero-1.png" }),
+    ]);
+  });
+
+  it("v2 backfill tolerates a corrupt payload: leaves cover_ref NULL, migration still completes", async () => {
+    const path = tempDbPath();
+
+    const legacy = openNodeDb(path);
+    open.push(legacy);
+    await legacy.execAsync(`
+      CREATE TABLE storyworlds (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+      CREATE TABLE arcs (id TEXT PRIMARY KEY, world_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+      PRAGMA user_version = 1;
+    `);
+    // One healthy row and one whose payload no longer parses.
+    const good = sampleWorld({ id: "good-world" });
+    await legacy.runAsync(
+      "INSERT INTO storyworlds (id, name, created_at, payload_json) VALUES (?, ?, ?, ?)",
+      [good.id, good.name, good.createdAt, JSON.stringify(good)],
+    );
+    await legacy.runAsync(
+      "INSERT INTO storyworlds (id, name, created_at, payload_json) VALUES (?, ?, ?, ?)",
+      ["corrupt-world", "Corrupt", "2026-07-17T00:00:00.000Z", "not json"],
+    );
+    legacy.close();
+
+    // Opening must not throw: a corrupt row is skipped, not fatal.
+    const { db } = await openStore(path);
+
+    const rows = await db.getAllAsync<{ id: string; cover_ref: string | null }>(
+      "SELECT id, cover_ref FROM storyworlds ORDER BY id",
+    );
+    expect(rows).toEqual([
+      { id: "corrupt-world", cover_ref: null },
+      { id: "good-world", cover_ref: "blobs/hero-1.png" },
+    ]);
+    // The ladder still advanced past v2 despite the corrupt row.
+    const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
+    expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
   });
 
   it("re-running migrations on an up-to-date database is a no-op", async () => {
@@ -148,6 +221,6 @@ describe("SqliteStore", () => {
     const { store: s2, db: db2 } = await openStore(path);
     const ver = await db2.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
     expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
-    expect(await s2.listWorlds()).toHaveLength(1);
+    expect(await s2.listWorldSummaries()).toHaveLength(1);
   });
 });
