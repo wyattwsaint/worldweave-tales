@@ -1,6 +1,7 @@
 /**
  * One-shot art-thesis validation: generate 3 pencil-sketch hero-card variants
- * against the REAL Recraft API and save the PNGs to disk for eyeballing.
+ * against the REAL Recraft API and save the images to disk for eyeballing.
+ * (Recraft returns WebP, so each file is named by its magic-byte format.)
  *
  * Run from the proxy/ dir:  npx tsx scripts/generate-hero-card.mts
  * Requires proxy/.env with RECRAFT_API_KEY set (billed, ~a few cents).
@@ -8,6 +9,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+/**
+ * Recraft returns WebP (RIFF/WEBP), not PNG — pick the file extension from the
+ * bytes' magic number so saved samples aren't mislabeled. Falls back to ".img".
+ */
+function extFromBytes(b: Buffer): string {
+  if (b.length >= 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") return ".webp";
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return ".png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return ".jpeg";
+  if (b.length >= 4 && b.toString("ascii", 0, 3) === "GIF") return ".gif";
+  return ".img";
+}
 
 // Load proxy/.env BEFORE importing config (which reads process.env at module eval).
 try {
@@ -69,7 +82,7 @@ for (let i = 0; i < imageRefs.length; i++) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Download failed for variant ${i}: ${resp.status}`);
   const bytes = Buffer.from(await resp.arrayBuffer());
-  const file = join(outDir, `hero-${label}-${i + 1}.png`);
+  const file = join(outDir, `hero-${label}-${i + 1}${extFromBytes(bytes)}`);
   await writeFile(file, bytes);
   saved.push(file);
   console.log(`  saved ${file} (${bytes.length} bytes)`);
