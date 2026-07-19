@@ -21,9 +21,12 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
   const [persistError, setPersistError] = useState<string | null>(null);
   /** The in-flight on-mount persist; ‹ Shelf awaits it so the shelf never misses the story. */
   const persistDone = useRef<Promise<void> | null>(null);
+  /** Whether that persist ultimately failed — the state above can't be read after an await. */
+  const persistFailed = useRef(false);
 
   useEffect(() => {
     if (source === "library") return; // already shelved — a re-save would clobber the stored world
+    let cancelled = false; // guards the setState below if the Viewer unmounts mid-save
     const world: Storyworld = {
       id: arc.worldId,
       name: arcTitle(arc),
@@ -38,13 +41,26 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
       await whenStoreReady();
       await persistFinishedWorld(world, arc, { store, downloadArt: artDownloader });
     })().catch(() => {
-      setPersistError("Couldn't save this tale to your shelf — it may be gone when you return.");
+      persistFailed.current = true;
+      if (!cancelled) {
+        setPersistError("Couldn't save this tale to your shelf — it may be gone when you return.");
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [arc, cards, bible, source]);
 
-  /** Waits out an in-flight save (failures already surfaced inline) before going home. */
+  /**
+   * Waits out an in-flight save before going home. If that save failed and the
+   * tap landed BEFORE the inline error was showing, stay on the Viewer so the
+   * failure is actually seen (never a silent hop home) — the next ‹ tap, with
+   * the error now on screen, does leave. Happy path: await, then home.
+   */
   async function backToShelf() {
+    const errorWasVisible = persistError !== null;
     await persistDone.current;
+    if (persistFailed.current && !errorWasVisible) return;
     goHome();
   }
 

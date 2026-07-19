@@ -152,4 +152,45 @@ describe("ViewerScreen — durable persist on mount", () => {
     expect(navState).toEqual({ screen: "library" });
     expect((await store.listWorldSummaries()).map((w) => w.id)).toContain(params.arc.worldId);
   });
+
+  /** Mount, tap ‹ Shelf mid-save, then make the save REJECT while the tap awaits it. */
+  async function tapShelfThenFailSave() {
+    let fail!: (e: Error) => void;
+    const gate = new Promise<never>((_, reject) => (fail = reject));
+    vi.spyOn(store, "saveWorld").mockImplementation(async () => {
+      await gate;
+    });
+
+    const params = viewerParams();
+    const root = await mountViewer(params);
+
+    // Tap ‹ Shelf while saveWorld is still pending…
+    act(() => {
+      void pressableByLabel(root, "‹ Shelf").props.onPress();
+    });
+    // …then the save fails while the user is mid-tap-wait.
+    await act(async () => {
+      fail(new Error("disk full"));
+    });
+    await act(async () => {});
+    return root;
+  }
+
+  it("‹ Shelf tapped mid-save that then FAILS stays on the Viewer with the error visible", async () => {
+    const root = await tapShelfThenFailSave();
+
+    // No silent hop home: the user must see the failure before leaving.
+    expect(navState?.screen).toBe("viewer");
+    expect(allText(root.root)).toContain("Couldn't save this tale");
+  });
+
+  it("a second ‹ Shelf tap after the surfaced failure does navigate home (never trapped)", async () => {
+    const root = await tapShelfThenFailSave();
+
+    act(() => {
+      void pressableByLabel(root, "‹ Shelf").props.onPress();
+    });
+    await act(async () => {});
+    expect(navState).toEqual({ screen: "library" });
+  });
 });

@@ -160,12 +160,56 @@ describe("SqliteStore", () => {
     // 2. user_version advanced to the latest.
     const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
     expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
-    // 3. The v2 summary columns now exist (querying them does not throw).
+    // 3. The v2 migration BACKFILLED cover_ref from the payload (same
+    // derivation as worldSummaryOf: deck[0]?.lockedImageRef) — otherwise every
+    // pre-v2 world loses its shelf thumbnail forever, because the shelf reads
+    // only the indexed column.
     const row = await db.getFirstAsync<{ cover_ref: string | null }>(
       "SELECT cover_ref FROM storyworlds WHERE id = ?",
       ["legacy-world"],
     );
-    expect(row).not.toBeNull();
+    expect(row?.cover_ref).toBe("blobs/hero-1.png");
+    // 4. And the shelf projection itself now shows the legacy cover.
+    expect(await store.listWorldSummaries()).toEqual([
+      expect.objectContaining({ id: "legacy-world", coverRef: "blobs/hero-1.png" }),
+    ]);
+  });
+
+  it("v2 backfill tolerates a corrupt payload: leaves cover_ref NULL, migration still completes", async () => {
+    const path = tempDbPath();
+
+    const legacy = openNodeDb(path);
+    open.push(legacy);
+    await legacy.execAsync(`
+      CREATE TABLE storyworlds (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+      CREATE TABLE arcs (id TEXT PRIMARY KEY, world_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+      PRAGMA user_version = 1;
+    `);
+    // One healthy row and one whose payload no longer parses.
+    const good = sampleWorld({ id: "good-world" });
+    await legacy.runAsync(
+      "INSERT INTO storyworlds (id, name, created_at, payload_json) VALUES (?, ?, ?, ?)",
+      [good.id, good.name, good.createdAt, JSON.stringify(good)],
+    );
+    await legacy.runAsync(
+      "INSERT INTO storyworlds (id, name, created_at, payload_json) VALUES (?, ?, ?, ?)",
+      ["corrupt-world", "Corrupt", "2026-07-17T00:00:00.000Z", "not json"],
+    );
+    legacy.close();
+
+    // Opening must not throw: a corrupt row is skipped, not fatal.
+    const { db } = await openStore(path);
+
+    const rows = await db.getAllAsync<{ id: string; cover_ref: string | null }>(
+      "SELECT id, cover_ref FROM storyworlds ORDER BY id",
+    );
+    expect(rows).toEqual([
+      { id: "corrupt-world", cover_ref: null },
+      { id: "good-world", cover_ref: "blobs/hero-1.png" },
+    ]);
+    // The ladder still advanced past v2 despite the corrupt row.
+    const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
+    expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
   });
 
   it("re-running migrations on an up-to-date database is a no-op", async () => {
