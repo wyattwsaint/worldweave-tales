@@ -8,8 +8,34 @@ import type { Arc, Storyworld } from "@wwt/domain";
  *
  * Reminder: the emailed PDF is the ONLY backup for now (SPEC.md §5).
  */
+
+/**
+ * The Library shelf's projection of a Storyworld — exactly the indexed columns
+ * SqliteStore keeps (`id`, `name`, `created_at`, `cover_ref`), so listing the
+ * shelf never parses a full payload. Opening a world fetches the real thing
+ * via {@link LocalStore.getWorld}.
+ */
+export interface WorldSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** The deck's first locked art ref at save time; null for a deckless world. */
+  coverRef: string | null;
+}
+
+/** The single source of the shelf projection (saveWorld indexes exactly this). */
+export function worldSummaryOf(world: Storyworld): WorldSummary {
+  return {
+    id: world.id,
+    name: world.name,
+    createdAt: world.createdAt,
+    coverRef: world.deck[0]?.lockedImageRef ?? null,
+  };
+}
+
 export interface LocalStore {
-  listWorlds(): Promise<Storyworld[]>;
+  /** Shelf listing, newest first. Summaries only — no full payloads. */
+  listWorldSummaries(): Promise<WorldSummary[]>;
   getWorld(id: string): Promise<Storyworld | undefined>;
   saveWorld(world: Storyworld): Promise<void>;
 
@@ -23,10 +49,12 @@ export class InMemoryStore implements LocalStore {
   private worlds = new Map<string, Storyworld>();
   private arcs = new Map<string, Arc>();
 
-  async listWorlds() {
+  async listWorldSummaries() {
     // Newest first — the same contract as SqliteStore's `created_at DESC`,
     // which the Library shelf relies on.
-    return [...this.worlds.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return [...this.worlds.values()]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(worldSummaryOf);
   }
   async getWorld(id: string) {
     return this.worlds.get(id);

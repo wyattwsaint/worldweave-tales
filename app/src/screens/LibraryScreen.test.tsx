@@ -125,9 +125,21 @@ describe("LibraryScreen — the home bookshelf", () => {
     // Created dates.
     expect(text).toContain("2026-07-15");
     expect(text).toContain("2026-07-01");
-    // Willowmere's cover (deck[0].lockedImageRef) resolves through the blob
-    // store; the deckless world degrades to a neutral placeholder (no image).
+    // Willowmere's cover (the summary's coverRef, indexed at save time from
+    // deck[0].lockedImageRef) resolves through the blob store; the deckless
+    // world degrades to a neutral placeholder (no image).
     expect(images(root).map((n) => n.props.source?.uri)).toEqual(["file:///doc/blobs/hero-1.png"]);
+  });
+
+  it("renders the cover thumb from the summary's coverRef — never re-derived from the payload", async () => {
+    // The store hands the shelf ONLY the summary projection; there is no full
+    // world to re-derive deck[0].lockedImageRef from.
+    vi.spyOn(store, "listWorldSummaries").mockResolvedValue([
+      { id: "w1", name: "Willowmere", createdAt: "2026-07-18T00:00:00.000Z", coverRef: "blobs/cover-only.png" },
+    ]);
+    const root = await mountShelf();
+    expect(allText(root.root)).toContain("Willowmere");
+    expect(images(root).map((n) => n.props.source?.uri)).toEqual(["file:///doc/blobs/cover-only.png"]);
   });
 
   it("opens a tapped world in the Viewer: most recent arc + the creation-path params", async () => {
@@ -152,6 +164,33 @@ describe("LibraryScreen — the home bookshelf", () => {
     expect(params.bible).toEqual(world.bible);
   });
 
+  it("openWorld fetches the full world and its arcs concurrently, not sequentially", async () => {
+    await store.saveWorld(sampleWorld({ id: "w1" }));
+    await store.saveArc(sampleArc({ id: "arc-1", worldId: "w1" }));
+
+    // Hold getWorld open: the arc fetch must already be in flight while the
+    // world fetch is still pending (independent reads run via Promise.all).
+    const realGetWorld = store.getWorld.bind(store);
+    let releaseGetWorld!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseGetWorld = resolve));
+    vi.spyOn(store, "getWorld").mockImplementation(async (id) => {
+      await gate;
+      return realGetWorld(id);
+    });
+    const listArcs = vi.spyOn(store, "listArcs");
+
+    const root = await mountShelf();
+    act(() => {
+      pressableByLabel(root, "Willowmere").props.onPress();
+    });
+    expect(listArcs).toHaveBeenCalledWith("w1");
+
+    await act(async () => {
+      releaseGetWorld();
+    });
+    expect(navState).toMatchObject({ screen: "viewer" });
+  });
+
   it("renders the friendly empty state whose ＋ New Story CTA launches the Wizard", async () => {
     const root = await mountShelf();
     expect(allText(root.root)).toContain("No tales on the shelf yet");
@@ -162,7 +201,7 @@ describe("LibraryScreen — the home bookshelf", () => {
   });
 
   it("shows the inline shelf error when the initial load fails — never a silent blank shelf", async () => {
-    vi.spyOn(store, "listWorlds").mockRejectedValue(new Error("db locked"));
+    vi.spyOn(store, "listWorldSummaries").mockRejectedValue(new Error("db locked"));
     const root = await mountShelf();
     expect(allText(root.root)).toContain("Couldn't load your bookshelf");
   });

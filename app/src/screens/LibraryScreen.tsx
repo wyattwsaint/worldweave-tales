@@ -1,22 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { Storyworld } from "@wwt/domain";
+import type { WorldSummary } from "../storage/localStore";
 import { useNav } from "../nav/NavContext";
 import { blobFs, store, whenStoreReady } from "../storage/store";
 import { artImageSource } from "../storage/artSource";
 
 /**
  * Library — the home bookshelf (SPEC §2.14: the library lives on the device).
- * Lists every saved Storyworld newest-first: title, cover thumb (the deck's
- * first locked ref — the same derivation saveWorld indexes as `cover_ref`),
- * and created date. Tapping a world re-opens its most recent arc in the Viewer
- * with the exact {arc, cards, bible} params the creation path passes, so the
- * Viewer stays single-mode. Reloads on every mount — returning to the shelf is
- * always fresh. A failed open shows an inline error and stays on the shelf.
+ * Lists every saved Storyworld newest-first from the store's summary
+ * projection (title, `coverRef` thumb, created date) — no full payloads on the
+ * shelf. Tapping a world fetches the full Storyworld and re-opens its most
+ * recent arc in the Viewer with the exact {arc, cards, bible} params the
+ * creation path passes, so the Viewer stays single-mode. Reloads on every
+ * mount — returning to the shelf is always fresh. A failed open shows an
+ * inline error and stays on the shelf.
  */
 export default function LibraryScreen() {
   const { navigate } = useNav();
-  const [worlds, setWorlds] = useState<Storyworld[] | null>(null);
+  const [worlds, setWorlds] = useState<WorldSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export default function LibraryScreen() {
     void (async () => {
       try {
         await whenStoreReady();
-        const listed = await store.listWorlds();
+        const listed = await store.listWorldSummaries();
         if (!cancelled) setWorlds(listed);
       } catch {
         if (!cancelled) setError("Couldn't load your bookshelf. Close and reopen the app to try again.");
@@ -38,8 +39,8 @@ export default function LibraryScreen() {
   async function openWorld(id: string) {
     setError(null);
     try {
-      const world = await store.getWorld(id);
-      const [arc] = world ? await store.listArcs(id) : []; // newest first (MVP: 1/world)
+      // Independent reads — fetch the full world and its arcs concurrently.
+      const [world, [arc]] = await Promise.all([store.getWorld(id), store.listArcs(id)]); // arcs newest first (MVP: 1/world)
       if (!world || !arc) throw new Error(`world ${id} has nothing to open`);
       navigate({
         screen: "viewer",
@@ -62,7 +63,7 @@ export default function LibraryScreen() {
       ) : null}
 
       {(worlds ?? []).map((world) => {
-        const source = artImageSource(world.deck[0]?.lockedImageRef ?? "", blobFs);
+        const source = artImageSource(world.coverRef ?? "", blobFs);
         return (
           <Pressable key={world.id} style={styles.shelfRow} onPress={() => void openWorld(world.id)}>
             {source ? (

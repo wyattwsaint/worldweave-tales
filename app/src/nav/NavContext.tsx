@@ -47,7 +47,7 @@ const NavContext = createContext<NavContextValue | null>(null);
 export function NavProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<NavState>({ screen: "library" });
   const navigate = useCallback((next: NavState) => setState(next), []);
-  const goHome = useCallback(() => setState({ screen: "library" }), []);
+  const goHome = useCallback(() => navigate({ screen: "library" }), [navigate]);
   const value = useMemo(() => ({ state, navigate, goHome }), [state, navigate, goHome]);
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
 }

@@ -1,5 +1,5 @@
 import type { Arc, Storyworld } from "@wwt/domain";
-import type { LocalStore } from "./localStore";
+import { worldSummaryOf, type LocalStore, type WorldSummary } from "./localStore";
 import { arcTitle } from "./persistence";
 
 /**
@@ -92,7 +92,7 @@ export class SqliteStore implements LocalStore {
   }
 
   async saveWorld(world: Storyworld): Promise<void> {
-    const coverRef = world.deck[0]?.lockedImageRef ?? null;
+    const { coverRef } = worldSummaryOf(world);
     await this.db.runAsync(
       `INSERT INTO storyworlds (id, name, created_at, cover_ref, payload_json)
        VALUES (?, ?, ?, ?, ?)
@@ -113,11 +113,20 @@ export class SqliteStore implements LocalStore {
     return row ? (JSON.parse(row.payload_json) as Storyworld) : undefined;
   }
 
-  async listWorlds(): Promise<Storyworld[]> {
-    const rows = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM storyworlds ORDER BY created_at DESC",
-    );
-    return rows.map((r) => JSON.parse(r.payload_json) as Storyworld);
+  async listWorldSummaries(): Promise<WorldSummary[]> {
+    // Indexed columns only — the shelf never pays for a payload parse.
+    const rows = await this.db.getAllAsync<{
+      id: string;
+      name: string;
+      created_at: string;
+      cover_ref: string | null;
+    }>("SELECT id, name, created_at, cover_ref FROM storyworlds ORDER BY created_at DESC");
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      createdAt: r.created_at,
+      coverRef: r.cover_ref,
+    }));
   }
 
   async saveArc(arc: Arc): Promise<void> {

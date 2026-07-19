@@ -190,15 +190,16 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     "B1 [BUG: bible discarded at CardPick->Viewer] saved world's bible carries the generated content",
     async () => {
       await runFlow();
-      const worlds = await store.listWorlds();
-      const saved = worlds[worlds.length - 1];
+      const worlds = await store.listWorldSummaries();
+      expect(worlds.length).toBeGreaterThan(0);
+      const saved = await store.getWorld(worlds[worlds.length - 1].id);
       expect(saved).toBeTruthy();
       // FakeProxyClient.generateArc produced a real StoryBible (virtuesTaught,
       // eventLog, openThreads, entitySheets). Viewer must persist THAT bible,
       // not an empty one. Current code rebuilds an empty bible -> FAILS.
-      expect(saved.bible.virtuesTaught).toContain("courage");
-      expect(saved.bible.eventLog.length).toBeGreaterThan(0);
-      expect(saved.bible.entitySheets.length).toBeGreaterThan(0);
+      expect(saved?.bible.virtuesTaught).toContain("courage");
+      expect(saved?.bible.eventLog.length).toBeGreaterThan(0);
+      expect(saved?.bible.entitySheets.length).toBeGreaterThan(0);
     },
   );
 
@@ -206,12 +207,12 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     "B2 [BUG: worldId clobber under 'new-world'] two runs persist two distinct worlds",
     async () => {
       await runFlow({ world: "Willowmere", hero: "Pip", villain: "Gloom" });
-      const afterFirst = (await store.listWorlds()).length;
+      const afterFirst = (await store.listWorldSummaries()).length;
       await runFlow({ world: "Brackenford", hero: "Bramble", villain: "Murk" });
-      const worlds = await store.listWorlds();
+      const worlds = await store.listWorldSummaries();
       // Each finished story is its own world; ids must be unique. Current code
       // stamps worldId = "new-world" for every run, so the second clobbers the
-      // first -> listWorlds stays length 1 -> FAILS.
+      // first -> the listing stays length 1 -> FAILS.
       expect(afterFirst).toBe(1);
       expect(worlds.length).toBe(2);
       const ids = new Set(worlds.map((w) => w.id));

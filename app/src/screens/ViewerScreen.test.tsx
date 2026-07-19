@@ -141,7 +141,7 @@ describe("ViewerScreen — durable persist on mount", () => {
     // The shelf must never appear without the just-woven story on it: if we
     // are already home, the world has to be in the store Library lists.
     if (navState?.screen === "library") {
-      expect((await store.listWorlds()).map((w) => w.id)).toContain(params.arc.worldId);
+      expect((await store.listWorldSummaries()).map((w) => w.id)).toContain(params.arc.worldId);
     }
 
     // Let the save finish — we end up home with the story shelved.
@@ -150,6 +150,6 @@ describe("ViewerScreen — durable persist on mount", () => {
     });
     await act(async () => {});
     expect(navState).toEqual({ screen: "library" });
-    expect((await store.listWorlds()).map((w) => w.id)).toContain(params.arc.worldId);
+    expect((await store.listWorldSummaries()).map((w) => w.id)).toContain(params.arc.worldId);
   });
 });

@@ -67,7 +67,7 @@ describe("SqliteStore", () => {
     // in-memory Map, this read would come back empty.
     const { store: reader } = await openStore(path);
     expect(await reader.getWorld(world.id)).toEqual(world);
-    expect(await reader.listWorlds()).toEqual([world]);
+    expect((await reader.listWorldSummaries()).map((s) => s.id)).toEqual([world.id]);
   });
 
   it("persists an Arc across a fresh handle and lists by world", async () => {
@@ -91,17 +91,46 @@ describe("SqliteStore", () => {
     const { store } = await openStore(path);
     await store.saveWorld(sampleWorld({ name: "First" }));
     await store.saveWorld(sampleWorld({ name: "Second" }));
-    const worlds = await store.listWorlds();
+    const worlds = await store.listWorldSummaries();
     expect(worlds).toHaveLength(1);
     expect(worlds[0].name).toBe("Second");
   });
 
-  it("listWorlds returns newest first (created_at DESC)", async () => {
+  it("listWorldSummaries returns newest first (created_at DESC)", async () => {
     const path = tempDbPath();
     const { store } = await openStore(path);
     await store.saveWorld(sampleWorld({ id: "old", createdAt: "2026-01-01T00:00:00.000Z" }));
     await store.saveWorld(sampleWorld({ id: "new", createdAt: "2026-07-01T00:00:00.000Z" }));
-    expect((await store.listWorlds()).map((w) => w.id)).toEqual(["new", "old"]);
+    expect((await store.listWorldSummaries()).map((w) => w.id)).toEqual(["new", "old"]);
+  });
+
+  it("listWorldSummaries projects the shelf columns — no payload parse", async () => {
+    const path = tempDbPath();
+    const { store, db } = await openStore(path);
+    await store.saveWorld(sampleWorld()); // deck[0].lockedImageRef = "blobs/hero-1.png"
+    await store.saveWorld(
+      sampleWorld({
+        id: "deckless",
+        name: "Brackenford",
+        createdAt: "2026-07-19T00:00:00.000Z",
+        deck: [],
+      }),
+    );
+
+    expect(await store.listWorldSummaries()).toEqual([
+      { id: "deckless", name: "Brackenford", createdAt: "2026-07-19T00:00:00.000Z", coverRef: null },
+      {
+        id: "world-willowmere",
+        name: "Willowmere",
+        createdAt: "2026-07-18T00:00:00.000Z",
+        coverRef: "blobs/hero-1.png",
+      },
+    ]);
+
+    // Straight from the indexed columns: even a corrupted payload cannot break
+    // the shelf listing, because the projection never JSON.parses it.
+    await db.runAsync("UPDATE storyworlds SET payload_json = 'not json'");
+    expect(await store.listWorldSummaries()).toHaveLength(2);
   });
 
   it("migrates an old (v1) database forward without data loss", async () => {
@@ -148,6 +177,6 @@ describe("SqliteStore", () => {
     const { store: s2, db: db2 } = await openStore(path);
     const ver = await db2.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
     expect(ver?.user_version).toBe(SqliteStore.LATEST_VERSION);
-    expect(await s2.listWorlds()).toHaveLength(1);
+    expect(await s2.listWorldSummaries()).toHaveLength(1);
   });
 });
