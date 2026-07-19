@@ -1,14 +1,16 @@
 import React, { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Card, Storyworld } from "@wwt/domain";
 import { useNav, type ViewerParams } from "../nav/NavContext";
-import { artDownloader, store, whenStoreReady } from "../storage/store";
+import { artDownloader, blobFs, store, whenStoreReady } from "../storage/store";
 import { persistFinishedWorld } from "../storage/persistence";
+import { artImageSource } from "../storage/artSource";
 
 /**
  * Viewer. Renders the finished Arc one section per Beat (spine label + text),
- * with each beat's dealt cards shown as labeled placeholder tiles (refs are not
- * real image URLs, so no <Image>). Durably persists the world AND its arc on
+ * with each beat's dealt cards shown as locked art: a blob-backed <Image> when
+ * the card has real art (a downloaded blob or a remote URL), else a labeled text
+ * placeholder tile (e.g. a `stub-image:*` ref). Durably persists the world AND its arc on
  * mount — downloading each card's ephemeral remote art to a local blob first,
  * so a re-read survives the Recraft URL expiring (SPEC §2.22, §5).
  */
@@ -52,11 +54,23 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             {beat.dealtCardIds.map((id) => {
               const card = byId.get(id);
               if (!card) return null;
+              const source = artImageSource(card.lockedImageRef, blobFs);
               return (
                 <View key={id} style={styles.card}>
-                  <View style={styles.swatch}>
-                    <Text style={styles.swatchLabel}>{card.lockedImageRef}</Text>
-                  </View>
+                  {source ? (
+                    <Image
+                      style={styles.swatch}
+                      source={source}
+                      resizeMode="cover"
+                      accessibilityLabel={card.canonName}
+                    />
+                  ) : (
+                    <View style={styles.swatch}>
+                      <Text style={styles.swatchLabel}>
+                        {card.lockedImageRef || "Art coming soon"}
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.cardName}>{card.canonName}</Text>
                   <Text style={styles.cardRole}>{card.role}</Text>
                 </View>

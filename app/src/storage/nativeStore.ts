@@ -33,7 +33,7 @@ export async function openSqliteStore(): Promise<SqliteStore> {
 }
 
 /** Production {@link BlobFs} over expo-file-system's SDK-54 File/Directory API. */
-function expoBlobFs(): BlobFs {
+export function expoBlobFs(): BlobFs {
   const base = Paths.document;
   return {
     documentDirectory: base.uri,

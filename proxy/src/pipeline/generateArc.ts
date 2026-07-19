@@ -1,5 +1,6 @@
 import type {
   Arc,
+  Beat,
   Card,
   GenerateArcRequest,
   GenerateArcResponse,
@@ -9,6 +10,11 @@ import type {
 import { ARC_SHAPES, TIERS } from "@wwt/domain";
 import type { ImageProvider } from "../providers/imageProvider.js";
 import type { LlmProvider } from "../providers/llmProvider.js";
+import {
+  capNewCast,
+  deriveDealtCardIds,
+  diffCastAgainstCanon,
+} from "./castResolution.js";
 
 /**
  * The up-front generation pipeline. ALL generation happens here, once, before
@@ -33,15 +39,33 @@ export async function generateArc(
   // 1. Arc shape.
   const shape = answers.shape ?? pickArcShapeAvoidingRepeat(world);
 
-  // 2. Prose.
-  const { beats } = await deps.llm.writeArc({ answers, shape, bible: world?.bible });
+  // 2. Author the arc in ONE call: prose-only beats PLUS a transient cast (every
+  //    entity that appears — new OR reused canon — each declaring its firstBeatIndex).
+  const { beats: proseBeats, cast } = await deps.llm.writeArc({
+    answers,
+    shape,
+    bible: world?.bible,
+  });
 
-  // 3. Resolve entities: reuse existing canon (free), find new ones.
+  // 3. Resolve the cast against canon DETERMINISTICALLY (no LLM): recurring canon
+  //    is free & unlimited; fresh entities are subject to the per-tier NEW cap.
   const existingIds = (world?.deck ?? []).map((c) => c.entityId);
-  const newEntities = await deps.llm.extractNewEntities({ beats, existingEntityIds: existingIds });
+  const { recurring, fresh } = diffCastAgainstCanon(cast, existingIds);
+  const { kept } = capNewCast(fresh, tier.newEntityCap);
 
-  // 4. Enforce the per-tier NEW-entity cap (reused canon is unlimited & free).
-  const capped = newEntities.slice(0, tier.newEntityCap);
+  // 4. Retained cast = recurring canon + kept-fresh. Only these are ever dealt, so
+  //    a beat can never reference a dropped/never-canonized card (dangling refs are
+  //    structurally impossible). Derive each beat's dealtCardIds by bucketing the
+  //    survivors by firstBeatIndex, promoting the prose beats to full Beats.
+  const survivors = [...recurring, ...kept];
+  const dealtByBeat = deriveDealtCardIds(survivors, proseBeats.length);
+  const beats: Beat[] = proseBeats.map((b, i) => ({
+    ...b,
+    dealtCardIds: dealtByBeat[i] ?? [],
+  }));
+
+  // New cards are minted only for kept-FRESH cast (recurring canon already has art).
+  const capped = kept;
 
   // Every world — including a brand-new one — locks its ONE art style through
   // the provider. A new world has no artStyle yet, so fall back to the MVP
@@ -65,8 +89,16 @@ export async function generateArc(
     });
 
     if (needsParentPick) {
-      // Parent taps to choose; canonization happens after the pick.
-      pendingCardChoices.push({ role: e.role, variantImageRefs: imageRefs });
+      // Parent taps to choose; canonization happens after the pick. Thread the
+      // cast member's REAL entityId + appearanceNote so the canonized Card carries
+      // the SAME id already bucketed into dealtCardIds (no dangling ref on a real
+      // model whose hero entityId != "hero").
+      pendingCardChoices.push({
+        entityId: e.entityId,
+        role: e.role,
+        appearanceNote: e.appearanceNote,
+        variantImageRefs: imageRefs,
+      });
     } else {
       newCanonCards.push({
         entityId: e.entityId,

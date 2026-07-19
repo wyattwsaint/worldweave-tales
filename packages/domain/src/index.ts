@@ -152,6 +152,30 @@ export interface Arc {
 }
 
 // ---------------------------------------------------------------------------
+// Cast — TRANSIENT authoring placement, on the LLM-provider return boundary ONLY.
+//
+// The authoring LLM emits a `cast` array alongside prose-only beats. Each member
+// declares WHERE it first appears (`firstBeatIndex`) — the single source of truth
+// for placement (ADR-0002 amendment). The pipeline then DERIVES each
+// `beat.dealtCardIds` by bucketing *retained* cast by `firstBeatIndex`, so dangling
+// refs are structurally impossible. `cast` is NOT persisted on Arc/Beat: recurring
+// cast lives in the canon deck (`Storyworld.deck`). A retained member is canonized
+// into a `Card`, which is why its identity fields mirror Card's.
+// ---------------------------------------------------------------------------
+
+export interface CastMember {
+  entityId: string;
+  role: CardRole;
+  /** Mirrors Card.appearanceNote so the drawn art and the prose never contradict. */
+  appearanceNote: string;
+  /**
+   * 0-based index of the earliest beat this entity appears in — the placement
+   * bucket the pipeline uses to derive `beat.dealtCardIds` for retained cast.
+   */
+  firstBeatIndex: number;
+}
+
+// ---------------------------------------------------------------------------
 // Guardrails — the values contract. See SPEC.md §7. Referenced by prose/art
 // prompt builders and by the free-text refusal logic.
 // ---------------------------------------------------------------------------
@@ -209,7 +233,17 @@ export interface GenerateArcRequest {
 }
 
 export interface GeneratedCardChoice {
+  /**
+   * The retained cast member's REAL entityId — the SAME id the pipeline bucketed
+   * into `beat.dealtCardIds`. The canonized Card MUST carry this id (not the role)
+   * or the viewer's `dealtCardIds -> card` lookup misses for any real-model run
+   * whose hero entityId differs from its role (e.g. "prince-alden" vs "hero").
+   */
+  entityId: string;
   role: CardRole;
+  /** Mirrors the cast member's appearanceNote (what the variants were drawn from)
+   *  so the canonized Card's note stays consistent with its locked art. */
+  appearanceNote: string;
   /** A few variants for hero/villain-class NEW cards; parent taps to pick. */
   variantImageRefs: string[];
 }
