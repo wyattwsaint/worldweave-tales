@@ -38,7 +38,7 @@ A phone app that helps a caregiver (mom / dad / grandparent) who **isn't a natur
 17. **Prose:** LLM-written inside a **fixed beat skeleton** (enforces pacing + happy ending), generated up front through the proxy. Exact LLM TBD at build.
 18. **Values layer:** global wholesome **guardrails always on** (good beats evil, happy ending, age-appropriate, bedtime-safe). **Specific lesson chosen per story** (defaulted by tier).
 19. **~10-minute read-aloud** default (~1,000–1,400 words, ~10–14 cards), **flexes with the age dial**.
-20. **Entity/card count:** cap governs **NEW entities per arc** (Beginner ~3, Solid ~6, Epic ~10). **Reused canon is unlimited and free.** Story length sets the ceiling. Parent's explicit picks are always guaranteed cards; LLM fills the rest up to the cap.
+20. **Entity/card count:** cap governs **NEW entities per arc** (Beginner ~3, Solid ~6, Epic ~10). **Reused canon is unlimited and free.** Story length sets the ceiling. **Hero/villain are must-keep and override the cap** — they survive even when the cap is smaller than the number of must-keeps; remaining slots fill in `firstBeatIndex` order. Parent's explicit picks are also always guaranteed cards, but for MVP that guarantee is a **forward-compat no-op** (no parent picks exist at authoring time — documented, not yet built). LLM fills the rest up to the cap.
 21. **Storyworld = the unit of canon.** It owns a canonical deck + many story arcs. New arcs reuse locked cards and only *add* new ones. A parent can have several Storyworlds. Hierarchy: **Storyworld → (canonical deck) + (many arcs) → each arc = ~10-min book of beats that deal that world's cards.**
 22. **Canonical art:** once the parent decides a card's art, it's **locked forever** — reused across this book and all future arcs, never regenerated. New arcs only add.
 23. **Story Bible (narrative canon):** per-Storyworld, structured, **LLM-maintained**, stored locally, **parent-correctable**. Holds entity sheets (with appearance notes matching the locked art), an event log (compact per-arc summaries, recency-weighted compression), world state, and open threads. Injected into each new generation as hard constraints. Keeps token cost flat as a world matures.
@@ -71,19 +71,20 @@ Storyworld (the unit of canon; parent may have several)
 
 Everything above lives **on-device** (e.g. SQLite + local blob store for images). No server-side user data.
 
+The `Beat` schema stays `{ text, dealtCards[] }` (unchanged). At read time each beat renders its dealt cards' locked images **in beat order** as blob-backed `<Image>` elements — a real blob path renders as an `<Image>`; a `stub-image:*` or other non-blob ref falls back to a text placeholder. N images render per beat, in order.
+
 ---
 
 ## 4. Generation pipeline (all up front, no mid-story spinning)
 
 1. **Wizard** — parent makes choices (depth scaled by tier): continue-a-thread? story shape? lesson? world/hero/villain choices.
-2. **Prose** — LLM writes the arc inside the chosen arc-shape skeleton, at the age reading level, constrained by the Story Bible + guardrails + chosen lesson. Chunked into per-beat pages.
-3. **Entity resolution** — determine card-worthy entities. For each: **reuse locked canon if it exists**; else it's NEW (counts against the tier's new-entity cap).
-4. **Card generation** — Recraft, locked pencil-sketch style. Hero/villain-class new cards → generate a few variants → **parent taps to pick** → canonize + lock. Other new cards AI-derived + locked.
-5. **Assemble book** — deal cards onto beat pages (card-layout).
-6. **Bible update** — LLM writes this arc's event summary, updates sheets/world-state, records the lesson + the new open-thread hook.
-7. **Export** — render PDF, email to parent-provided address.
+2. **Single-pass authoring** — one LLM call returns `{ beats, cast }`: the arc's prose (inside the chosen arc-shape skeleton, at the age reading level, constrained by the Story Bible + guardrails + chosen lesson, chunked into per-beat pages) **and** its cast, in one structured response. **Entity resolution** is then a **deterministic diff** of `cast` against the canon deck: for each cast member, **reuse locked canon if it exists**; else it's NEW (counts against the tier's new-entity cap). `cast` is **transient** — it lives only at the provider boundary and is **not persisted**, so there is no schema change; recurring cast persists via the existing `Storyworld.deck`.
+3. **Card generation** — Recraft, locked pencil-sketch style. Hero/villain-class new cards → generate a few variants → **parent taps to pick** → canonize + lock. Other new cards AI-derived + locked.
+4. **Assemble book** — **derive** each beat's `dealtCards` by bucketing the surviving cast onto beats by `firstBeatIndex`, then render the card-layout pages: each dealt card's locked image renders **in beat order** as a blob-backed `<Image>` (real blob path → `<Image>`; `stub-image:*` / non-blob refs → text-placeholder fallback).
+5. **Bible update** — LLM writes this arc's event summary, updates sheets/world-state, records the lesson + the new open-thread hook.
+6. **Export** — render PDF, email to parent-provided address.
 
-All network/generation happens in steps 2–4/6 (up front). Reading the finished book needs no network.
+All network/generation happens in steps 2–3/5 (up front). Reading the finished book needs no network.
 
 ---
 
