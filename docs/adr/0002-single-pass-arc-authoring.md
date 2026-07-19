@@ -2,7 +2,9 @@
 
 **Status:** accepted (2026-07-18)
 
-The authoring LLM call returns the arc's **beats and its cast in one structured response**, using consistent entity ids across both: `{ beats: [{ text, spineBeat, dealtCardIds }], cast: [{ entityId, role, appearanceNote, firstBeatIndex }] }`. That call is the single source of truth for both prose and card placement. Entity resolution becomes a **deterministic diff** of the cast against existing canon — not a second, independently-hallucinating LLM call.
+**Amended 2026-07-18** — the shapes below reflect the *locked, as-built* design. The original pre-implementation shape (beats carried `dealtCardIds`) was superseded during build; the original decision context (Why / Considered options) is preserved intact. See the **Amendment (2026-07-18) — review decisions** section for the two build-time findings that hardened it.
+
+The authoring LLM call returns the arc's **beats and its cast in one structured response**, using consistent entity ids across both: `{ beats: [{ text, spineBeat }], cast: [{ entityId, role, appearanceNote, firstBeatIndex }] }`. Beats are **prose-only** — the model emits `cast` but does **not** emit `dealtCardIds`; card placement is derived by the pipeline from `cast.firstBeatIndex` (see Consequences). That call is the single source of truth for both prose and card placement. Entity resolution becomes a **deterministic diff** of the cast against existing canon — not a second, independently-hallucinating LLM call.
 
 ## Why
 
@@ -16,6 +18,13 @@ Today there are two independent LLM sources of entity ids with no reconciliation
 
 ## Consequences
 
-- `dealtCardIds` are populated from the authoring pass; "order of appearance" is authoritative via `firstBeatIndex` / the first beat that lists an id.
-- If the cast exceeds the tier's new-entity cap, capped-out ids are **stripped from `dealtCardIds`** (no dangling refs); hero/villain and the parent's explicit picks always survive the cap (SPEC §2.20).
+- `beat.dealtCardIds` is **pipeline-derived**, not authored: the pipeline buckets the **retained** cast onto beats by `firstBeatIndex` — the single source of placement. Because every dealt id comes from a cast member the pipeline chose to keep, dangling card refs are **structurally impossible**.
+- Cap handling: `{hero, villain}` are **must-keep** and **override** the new-entity cap (they survive even when the cap is < 2); remaining slots fill by `firstBeatIndex` order. **Dropped** entities are never bucketed onto any beat, so no dangling refs. "Parent explicit picks survive" is a **forward-compat no-op** for MVP — no picks exist at authoring time, so it is documented but nothing is built for it. (SPEC §2.20.)
 - MVP simplification: because continuation is deferred, each Storyworld has exactly one arc, so there is no reused-canon dealing to reconcile yet — the response shape only needs to *accommodate* it later.
+
+## Amendment (2026-07-18) — review decisions
+
+Two build-time review findings hardened the as-built design:
+
+- **F1 — entityId threading.** `GeneratedCardChoice` carries `entityId` + `appearanceNote`, threaded **cast → pick → canonized Card**, so the Card's `entityId` matches the beat's derived `dealtCardIds`. Without this, real-LLM hero/villain cards dangle (the stub only worked because its cast used `entityId === role`).
+- **F2 — updateBible merge.** Tolerant Zod (omitted sections → `undefined`, explicit `[]` respected); `updateBible` merges `parsed.X ?? prior?.X ?? []` against `priorBible`, so a partial model reply no longer wipes prior canon. This also fixed the prior HTTP-500 (relationships-as-object / missing `entityId`·`facts`·`appearanceNote`).
