@@ -27,6 +27,12 @@ export interface ViewerParams {
   cards: Card[];
   /** The Story Bible generated for this arc, persisted with the finished world. */
   bible: StoryBible;
+  /**
+   * Set when re-opened from the Library shelf: the world is already persisted,
+   * so the Viewer must not save again (the upsert would clobber the stored
+   * world). Absent on the fresh CardPick -> Viewer creation path.
+   */
+  source?: "library";
 }
 
 interface NavContextValue {

@@ -1,5 +1,6 @@
 import type { Arc, Storyworld } from "@wwt/domain";
 import type { LocalStore } from "./localStore";
+import { arcTitle } from "./persistence";
 
 /**
  * The slice of expo-sqlite's `SQLiteDatabase` this store uses. Declaring it
@@ -60,12 +61,6 @@ const MIGRATIONS: readonly Migration[] = [
     `,
   },
 ];
-
-/** A human-facing label for the Library list, derived from the teaching point. */
-function arcTitle(arc: Arc): string {
-  const tp = arc.teachingPoint;
-  return tp.kind === "virtue" ? tp.virtue : tp.description;
-}
 
 /**
  * Production `LocalStore` backed by SQLite. Hybrid rows (ADR-0001): a few

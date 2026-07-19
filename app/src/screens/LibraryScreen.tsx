@@ -20,10 +20,19 @@ export default function LibraryScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false; // guards the setState below if the shelf unmounts mid-load
     void (async () => {
-      await whenStoreReady();
-      setWorlds(await store.listWorlds());
+      try {
+        await whenStoreReady();
+        const listed = await store.listWorlds();
+        if (!cancelled) setWorlds(listed);
+      } catch {
+        if (!cancelled) setError("Couldn't load your bookshelf. Close and reopen the app to try again.");
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function openWorld(id: string) {
@@ -32,7 +41,10 @@ export default function LibraryScreen() {
       const world = await store.getWorld(id);
       const [arc] = world ? await store.listArcs(id) : []; // newest first (MVP: 1/world)
       if (!world || !arc) throw new Error(`world ${id} has nothing to open`);
-      navigate({ screen: "viewer", params: { arc, cards: world.deck, bible: world.bible } });
+      navigate({
+        screen: "viewer",
+        params: { arc, cards: world.deck, bible: world.bible, source: "library" },
+      });
     } catch {
       setError("Couldn't open that story. Try another, or weave a new one.");
     }

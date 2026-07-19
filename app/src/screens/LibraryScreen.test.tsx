@@ -1,6 +1,6 @@
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../../App";
 import { NavProvider, useNav, type NavState } from "../nav/NavContext";
 import LibraryScreen from "./LibraryScreen";
@@ -99,6 +99,7 @@ describe("LibraryScreen — the home bookshelf", () => {
   });
   afterEach(() => {
     setBlobFs(undefined);
+    vi.restoreAllMocks();
   });
 
   it("lists saved worlds newest-first with title, cover thumb, and created date", async () => {
@@ -160,6 +161,12 @@ describe("LibraryScreen — the home bookshelf", () => {
     expect(navState).toEqual({ screen: "wizard" });
   });
 
+  it("shows the inline shelf error when the initial load fails — never a silent blank shelf", async () => {
+    vi.spyOn(store, "listWorlds").mockRejectedValue(new Error("db locked"));
+    const root = await mountShelf();
+    expect(allText(root.root)).toContain("Couldn't load your bookshelf");
+  });
+
   it("stays on the shelf with an inline error when a world fails to open", async () => {
     await store.saveWorld(sampleWorld({ id: "w1" })); // world saved, but no arc
     const root = await mountShelf();
@@ -183,6 +190,25 @@ describe("LibraryScreen — the home bookshelf", () => {
       pressableByLabel(root, "New Story").props.onPress();
     });
     expect(textInputByTestID(root, "world")).toBeTruthy();
+  });
+
+  it("re-opening a world from the shelf never re-persists it (no clobbering upsert)", async () => {
+    await store.saveWorld(sampleWorld());
+    await store.saveArc(sampleArc());
+    const savedWorlds = vi.spyOn(store, "saveWorld");
+    const savedArcs = vi.spyOn(store, "saveArc");
+
+    let root!: ReactTestRenderer;
+    await act(async () => {
+      root = TestRenderer.create(<App client={new FakeProxyClient()} />);
+    });
+    await act(async () => {
+      pressableByLabel(root, "Willowmere").props.onPress();
+    });
+
+    expect(allText(root.root)).toContain("Your Tale"); // the Viewer is open...
+    expect(savedWorlds).not.toHaveBeenCalled(); // ...but nothing was re-saved
+    expect(savedArcs).not.toHaveBeenCalled();
   });
 
   it("Viewer's ‹ Shelf affordance returns to a freshly-reloaded shelf", async () => {
