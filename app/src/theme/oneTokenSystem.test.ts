@@ -11,10 +11,11 @@ import { describe, expect, it } from "vitest";
  *
  * `LEGACY` lists the screens the #5 rebuild has not reached yet (build order
  * §6: Viewer → CardPick → Library → Wizard). Each rebuild slice MUST remove
- * its screen from this list — the list only ever shrinks.
+ * its screen from this list — the list only ever shrinks, and with the Wizard
+ * (the final slice) rebuilt it is EMPTY. Nothing may ever be added back.
  */
 
-const LEGACY = new Set(["WizardScreen.tsx"]);
+const LEGACY = new Set<string>([]);
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRS = ["screens", "components"];
@@ -47,8 +48,12 @@ const files = SCANNED_DIRS.flatMap((d) => sourceFiles(join(SRC, d))).filter(
 );
 
 describe("one token system (screens/components carry no raw styles)", () => {
-  it("scans the rebuilt Viewer (the tripwire must never be vacuous)", () => {
-    expect(files.map((f) => f.split(/[\\/]/).pop())).toContain("ViewerScreen.tsx");
+  it("scans every rebuilt screen (the tripwire must never be vacuous, the allowlist only shrinks)", () => {
+    const names = files.map((f) => f.split(/[\\/]/).pop());
+    expect(names).toContain("ViewerScreen.tsx");
+    expect(names).toContain("CardPickScreen.tsx");
+    expect(names).toContain("LibraryScreen.tsx");
+    expect(names).toContain("WizardScreen.tsx");
   });
 
   for (const file of files) {
