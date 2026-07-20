@@ -69,6 +69,44 @@ export function __setColorScheme(scheme: "light" | "dark" | null): void {
   colorScheme = scheme;
 }
 
+// ---- BackHandler ----------------------------------------------------------
+// Just enough of the Android hardware-Back contract: `addEventListener`
+// registers a handler and returns a `{ remove }` subscription. Tests fire the
+// event through `__fireBackPress`, which (like the real BackHandler) asks the
+// most recently added handler first and stops at the first one returning true.
+
+type BackPressHandler = () => boolean | null | undefined;
+const backPressHandlers: BackPressHandler[] = [];
+
+export const BackHandler = {
+  addEventListener: (_event: "hardwareBackPress", handler: BackPressHandler) => {
+    backPressHandlers.push(handler);
+    return {
+      remove: () => {
+        const i = backPressHandlers.indexOf(handler);
+        if (i >= 0) backPressHandlers.splice(i, 1);
+      },
+    };
+  },
+};
+
+/** Test hook (not part of react-native): fire hardware Back; true if consumed. */
+export function __fireBackPress(): boolean {
+  for (let i = backPressHandlers.length - 1; i >= 0; i--) {
+    if (backPressHandlers[i]()) return true;
+  }
+  return false;
+}
+
+/**
+ * Test hook (not part of react-native): drop every registered handler. Call
+ * between tests — mounted trees are rarely unmounted under the render harness,
+ * so effect cleanups that would remove subscriptions may never run.
+ */
+export function __resetBackPressHandlers(): void {
+  backPressHandlers.length = 0;
+}
+
 // ---- Animated -------------------------------------------------------------
 // Just enough of the built-in Animated API for fade/scale-in entrances:
 // timing() completes synchronously so tests see the settled state, and
@@ -121,4 +159,5 @@ export default {
   Platform,
   useColorScheme,
   Animated,
+  BackHandler,
 };

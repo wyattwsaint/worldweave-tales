@@ -139,7 +139,9 @@ the child and come back mid-beat.
 - **Entity role:** Alegreya SC 500, 11.5px, .05em (14px in the art caption).
 - **Prose:** Alegreya Regular 400, 19px / 1.6 (see above).
 - **Drop cap:** first paragraph only — Alegreya ExtraBold, 3.3em, accent amber
-  (large-text exemption).
+  (large-text exemption). RN deviation: a floated 3.3em is not expressible in
+  RN Text; shipped as a 30px/34 accent raised cap (`typography.dropCap`) —
+  large-text exemption holds.
 
 ### Layout
 

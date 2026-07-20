@@ -169,6 +169,12 @@ describe("type scale (ui-direction.md appendix, prototype-confirmed)", () => {
     expect(typography.entityNameArt.fontSize).toBe(24);
   });
 
+  it("drop cap: display face raised cap at 30px/34 (the RN deviation — a floated 3.3em is not expressible in RN Text)", () => {
+    expect(typography.dropCap.fontFamily).toBe("Alegreya_800ExtraBold");
+    expect(typography.dropCap.fontSize).toBe(30);
+    expect(typography.dropCap.lineHeight).toBe(34);
+  });
+
   it("entity role: Alegreya SC 500 11.5px/.05em tile / 14px art caption", () => {
     expect(typography.entityRole.fontFamily).toBe("AlegreyaSC_500Medium");
     expect(typography.entityRole.fontSize).toBe(11.5);

@@ -19,15 +19,27 @@ const LEGACY = new Set(["CardPickScreen.tsx", "LibraryScreen.tsx", "WizardScreen
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRS = ["screens", "components"];
 
-/** #RGB / #RRGGBB / #RRGGBBAA color literals (not e.g. `stub-image:hero#0`). */
-const HEX_COLOR = /#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/;
+/**
+ * #RGB / #RGBA / #RRGGBB / #RRGGBBAA hex literals (not e.g. `stub-image:hero#0`)
+ * plus rgb()/rgba()/hsl()/hsla() function syntax.
+ */
+const RAW_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|\b(?:rgba?|hsla?)\s*\(/;
+/**
+ * Named colors, cheaply: any color-valued style prop fed a string literal
+ * (`color: "tomato"`, `shadowColor: 'grey'`). `"transparent"` is the one legal
+ * literal — it names the absence of a color, not a color.
+ */
+const NAMED_COLOR = /(?:\bcolor|Color)\s*:\s*["'](?!transparent["'])/;
 const FONT_FAMILY = /fontFamily\s*:/;
 
+/** Recursive: subdirectories added under a scanned dir can never escape. */
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
-    .map((f) => join(dir, f));
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(full);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [full] : [];
+  });
 }
 
 const files = SCANNED_DIRS.flatMap((d) => sourceFiles(join(SRC, d))).filter(
@@ -42,11 +54,11 @@ describe("one token system (screens/components carry no raw styles)", () => {
   for (const file of files) {
     const name = file.split(/[\\/]/).pop();
 
-    it(`${name}: no raw hex color literals`, () => {
+    it(`${name}: no raw color literals (hex, rgb()/hsl(), or named)`, () => {
       const offending = readFileSync(file, "utf8")
         .split("\n")
         .map((line, i) => ({ line, n: i + 1 }))
-        .filter(({ line }) => HEX_COLOR.test(line));
+        .filter(({ line }) => RAW_COLOR.test(line) || NAMED_COLOR.test(line));
       expect(offending).toEqual([]);
     });
 

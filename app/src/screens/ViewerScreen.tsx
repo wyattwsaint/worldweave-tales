@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  BackHandler,
   Image,
   Pressable,
   ScrollView,
@@ -79,11 +80,25 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
   /** Full-screen entity-art lightbox: the tapped card, or null when closed. */
   const [artCard, setArtCard] = useState<Card | null>(null);
   const artIn = useRef(new Animated.Value(0)).current;
-  function openArt(card: Card) {
-    setArtCard(card);
+
+  // Entrance runs here — after the overlay has committed — not in the press
+  // handler, so the animation never targets a view that isn't mounted yet.
+  useEffect(() => {
+    if (!artCard) return;
     artIn.setValue(0);
     Animated.timing(artIn, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-  }
+  }, [artCard, artIn]);
+
+  // Android hardware Back closes an open lightbox (consumed) instead of
+  // backing out of the story; with it closed, Back keeps its default meaning.
+  useEffect(() => {
+    if (!artCard) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setArtCard(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [artCard]);
 
   const [persistError, setPersistError] = useState<string | null>(null);
   /** The in-flight on-mount persist; ‹ Shelf awaits it so the shelf never misses the story. */
@@ -148,7 +163,14 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
       {/* Ambient lamp wash from the top — decorative, the "warm light source". */}
       <View style={styles.lampWash} pointerEvents="none" />
 
-      <View style={styles.column}>
+      {/* While the lightbox covers this column, hide it from assistive tech:
+          `accessibilityViewIsModal` on the overlay handles VoiceOver focus,
+          but TalkBack needs the covered side excluded explicitly. */}
+      <View
+        style={styles.column}
+        importantForAccessibility={artCard ? "no-hide-descendants" : "auto"}
+        accessibilityElementsHidden={artCard !== null}
+      >
         <View style={styles.topbar}>
           <Pressable
             accessibilityRole="button"
@@ -206,7 +228,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
                     accessibilityRole="button"
                     accessibilityLabel={`Open art for ${card.canonName}`}
                     style={styles.tile}
-                    onPress={() => openArt(card)}
+                    onPress={() => setArtCard(card)}
                   >
                     <View style={[styles.tileArt, tilt]}>
                       {source ? (
@@ -455,9 +477,9 @@ function makeStyles({ colors, type }: Theme) {
     proseContent: { paddingBottom: 6 },
     prose: { ...type.body, color: colors.ink },
     proseGap: { marginTop: 12 },
-    // Raised cap, not a floated 3.3em drop cap (RN Text cannot float);
-    // display face on accent — large-text size, so the 3:1 exemption holds.
-    dropCap: { ...type.display, fontSize: 30, lineHeight: 34, color: colors.accent },
+    // Raised cap on accent — the recorded RN deviation from the appendix's
+    // floated 3.3em drop cap; size/face live in the token (large-text, 3:1).
+    dropCap: { ...type.dropCap, color: colors.accent },
     verse: { ...type.body, color: colors.ink2, fontStyle: "italic", textAlign: "center", marginTop: 16 },
     pager: {
       flexDirection: "row",

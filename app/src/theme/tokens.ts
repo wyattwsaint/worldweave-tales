@@ -91,6 +91,17 @@ export const typography = {
     fontSize: 27,
     lineHeight: 31.05,
   },
+  /**
+   * Raised cap opening the first prose paragraph. The appendix's floated 3.3em
+   * drop cap is not expressible in RN Text, so the recorded RN deviation ships
+   * instead: the display face at 30px/34, colored `accent` at the call site
+   * (30px ≥ the 24px large-text threshold, so the 3:1 exemption holds).
+   */
+  dropCap: {
+    fontFamily: "Alegreya_800ExtraBold",
+    fontSize: 30,
+    lineHeight: 34,
+  },
   /** Spine/stage line under the title ("Page four · virtue tested"). */
   spineStage: {
     fontFamily: "AlegreyaSC_500Medium",

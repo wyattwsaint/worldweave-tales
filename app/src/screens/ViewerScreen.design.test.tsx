@@ -1,7 +1,11 @@
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Animated } from "../../test/react-native.mock";
+import {
+  Animated,
+  __fireBackPress,
+  __resetBackPressHandlers,
+} from "../../test/react-native.mock";
 import { NavProvider, useNav, type NavState, type ViewerParams } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
@@ -75,6 +79,18 @@ function flat(style: unknown): Record<string, unknown> {
   return style as Record<string, unknown>;
 }
 
+/**
+ * The background content column — the smallest plain view holding both the top
+ * bar ("Your Tale") and the pager ("‹ Back"); everything the lightbox covers.
+ */
+function contentColumn(root: ReactTestRenderer): Node {
+  const hits = root.root.findAll(
+    (n) =>
+      isHost(n.type, "rn-view") && allText(n).includes("Your Tale") && allText(n).includes("‹ Back"),
+  );
+  return hits.sort((a, b) => a.findAll(() => true).length - b.findAll(() => true).length)[0];
+}
+
 /** All accessibilityLabel strings anywhere in the tree. */
 function allLabels(root: ReactTestRenderer): string[] {
   return root.root
@@ -119,6 +135,9 @@ async function press(node: Node | undefined) {
 beforeEach(() => {
   setBlobFs(fakeFs);
   navState = undefined;
+  // Roots stay mounted between tests, so open-lightbox subscriptions from an
+  // earlier test would otherwise leak into this one's BackHandler state.
+  __resetBackPressHandlers();
 });
 afterEach(() => {
   setBlobFs(undefined);
@@ -359,5 +378,61 @@ describe("Viewer entity-art lightbox", () => {
       .sort((a, b) => b.findAll(() => true).length - a.findAll(() => true).length)[0];
     await press(scrim);
     expect(root.root.findAll((n) => isHost(n.type, "rn-animated-view"))).toHaveLength(0);
+  });
+
+  it("hides the covered content from TalkBack AND VoiceOver while open", async () => {
+    const root = await mountViewer();
+    const column = contentColumn(root);
+    expect(column.props.importantForAccessibility).toBe("auto");
+    expect(column.props.accessibilityElementsHidden).toBe(false);
+
+    await press(byA11yLabel(root, "Open art for Pip")[0]);
+    expect(column.props.importantForAccessibility).toBe("no-hide-descendants");
+    expect(column.props.accessibilityElementsHidden).toBe(true);
+
+    await press(byA11yLabel(root, "Close entity art")[0]);
+    expect(column.props.importantForAccessibility).toBe("auto");
+    expect(column.props.accessibilityElementsHidden).toBe(false);
+  });
+
+  it("Android hardware Back closes the open lightbox and consumes the event", async () => {
+    const root = await mountViewer();
+    await press(byA11yLabel(root, "Open art for Pip")[0]);
+    let consumed = false;
+    await act(async () => {
+      consumed = __fireBackPress();
+    });
+    expect(consumed).toBe(true);
+    expect(root.root.findAll((n) => isHost(n.type, "rn-animated-view"))).toHaveLength(0);
+  });
+
+  it("hardware Back with the lightbox closed stays default (not consumed)", async () => {
+    const root = await mountViewer();
+    expect(__fireBackPress()).toBe(false);
+    // …and the handler unregisters on close, not just on unmount.
+    await press(byA11yLabel(root, "Open art for Pip")[0]);
+    await press(byA11yLabel(root, "Close entity art")[0]);
+    expect(__fireBackPress()).toBe(false);
+  });
+
+  it("the entrance animation starts only after the overlay has committed", async () => {
+    const root = await mountViewer();
+    const originalTiming = Animated.timing;
+    let overlaysWhenStarted = -1;
+    Animated.timing = (value, config) => {
+      const anim = originalTiming(value, config);
+      return {
+        start: (cb) => {
+          overlaysWhenStarted = root.root.findAll((n) => isHost(n.type, "rn-animated-view")).length;
+          anim.start(cb);
+        },
+      };
+    };
+    try {
+      await press(byA11yLabel(root, "Open art for Pip")[0]);
+    } finally {
+      Animated.timing = originalTiming;
+    }
+    expect(overlaysWhenStarted).toBe(1);
   });
 });
