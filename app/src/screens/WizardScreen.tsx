@@ -131,7 +131,8 @@ export default function WizardScreen({
         {busy ? (
           // Weaving: the form steps aside for a fading wait card. Built-in
           // Animated only (fade); the motif loading animation belongs to #9.
-          <Animated.View style={[styles.waitCard, { opacity: waitIn }]}>
+          // A polite live region, so screen readers voice the weaving too.
+          <Animated.View accessibilityLiveRegion="polite" style={[styles.waitCard, { opacity: waitIn }]}>
             <Text style={styles.waitTitle} maxFontSizeMultiplier={1.4}>
               Weaving your tale…
             </Text>
@@ -146,7 +147,14 @@ export default function WizardScreen({
           <>
             {visibleNodes.map((node) => (
               <Field key={node.id} label={labelFor(node.id)} styles={styles}>
-                <NodeControl node={node} answers={answers} onChange={setAnswer} theme={theme} styles={styles} />
+                <NodeControl
+                  node={node}
+                  label={labelFor(node.id)}
+                  answers={answers}
+                  onChange={setAnswer}
+                  theme={theme}
+                  styles={styles}
+                />
               </Field>
             ))}
 
@@ -155,7 +163,12 @@ export default function WizardScreen({
               // surface, the answers held safe in state for Try again, and the
               // one quiet way back to the Shelf. Elsewhere the flow is no-back.
               <>
-                <Text style={styles.error} maxFontSizeMultiplier={1.6}>
+                <Text
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                  style={styles.error}
+                  maxFontSizeMultiplier={1.6}
+                >
                   The tale slipped away before it could be woven. Your choices are safe — let's try
                   again.
                 </Text>
@@ -203,12 +216,15 @@ type Styles = ReturnType<typeof makeStyles>;
 /** Render a single wizard node by its `kind`. */
 function NodeControl({
   node,
+  label,
   answers,
   onChange,
   theme,
   styles,
 }: {
   node: WizardNode;
+  /** The question's human label — names the control for screen readers. */
+  label: string;
   answers: NodeAnswers;
   onChange: (id: string, value: string | boolean | undefined) => void;
   theme: Theme;
@@ -244,6 +260,7 @@ function NodeControl({
         <Pressable
           testID={node.id}
           accessibilityRole="switch"
+          accessibilityLabel={label}
           accessibilityState={{ checked: on }}
           style={[styles.chip, styles.toggle, on && styles.chipOn]}
           onPress={() => onChange(node.id, !on)}
@@ -284,9 +301,17 @@ function threadWorldId(_continueThreadId: string): string {
   return newWorldId();
 }
 
-/** A human label derived from the node id ("ageBand" -> "Age band"). */
+/**
+ * A human label derived from a graph id — node ids ("ageBand" -> "Age band")
+ * and option ids ("early-reader" -> "Early reader") alike. Display/spoken copy
+ * only: the raw id always remains the stored answer value.
+ */
 function labelFor(id: string): string {
-  const spaced = id.replace(/([A-Z])/g, " $1").toLowerCase().trim();
+  const spaced = id
+    .replace(/-/g, " ")
+    .replace(/([A-Z])/g, " $1")
+    .toLowerCase()
+    .trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
@@ -349,8 +374,9 @@ function ChipRow({
             style={[styles.chip, on && styles.chipOn]}
             onPress={() => onSelect(opt)}
           >
+            {/* Humanized copy for eyes and ears; the raw id is what's stored. */}
             <Text style={[styles.chipText, on && styles.chipTextOn]} maxFontSizeMultiplier={1.4}>
-              {opt}
+              {labelFor(opt)}
             </Text>
           </Pressable>
         );

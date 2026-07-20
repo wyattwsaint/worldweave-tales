@@ -235,7 +235,7 @@ describe("Wizard question cards", () => {
 describe("Wizard choice chips", () => {
   it("chips are labelled >=44pt buttons; the current pick carries the accent edge", async () => {
     const root = await mountWizard();
-    const beginner = pressableByLabel(root, "beginner")!;
+    const beginner = pressableByLabel(root, "Beginner")!;
     expect(beginner).toBeTruthy();
     expect(beginner.props.accessibilityRole).toBe("button");
     expect(beginner.props.accessibilityState?.selected).toBe(true);
@@ -243,7 +243,7 @@ describe("Wizard choice chips", () => {
     expect(on.minHeight as number).toBeGreaterThanOrEqual(44);
     expect(on.borderColor).toBe(palettes.day.accent);
 
-    const solid = pressableByLabel(root, "solid")!;
+    const solid = pressableByLabel(root, "Solid")!;
     expect(solid.props.accessibilityState?.selected).toBe(false);
     const off = flat(solid.props.style);
     expect(off.borderColor).toBe(palettes.day.line);
@@ -260,11 +260,30 @@ describe("Wizard choice chips", () => {
 
   it("picking another chip moves the accent edge with the selection", async () => {
     const root = await mountWizard();
-    await press(pressableByLabel(root, "solid"));
-    expect(pressableByLabel(root, "solid")!.props.accessibilityState?.selected).toBe(true);
-    expect(flat(pressableByLabel(root, "solid")!.props.style).borderColor).toBe(palettes.day.accent);
-    expect(pressableByLabel(root, "beginner")!.props.accessibilityState?.selected).toBe(false);
-    expect(flat(pressableByLabel(root, "beginner")!.props.style).borderColor).toBe(palettes.day.line);
+    await press(pressableByLabel(root, "Solid"));
+    expect(pressableByLabel(root, "Solid")!.props.accessibilityState?.selected).toBe(true);
+    expect(flat(pressableByLabel(root, "Solid")!.props.style).borderColor).toBe(palettes.day.accent);
+    expect(pressableByLabel(root, "Beginner")!.props.accessibilityState?.selected).toBe(false);
+    expect(flat(pressableByLabel(root, "Beginner")!.props.style).borderColor).toBe(palettes.day.line);
+  });
+
+  it("chip copy is humanized — hyphens become spaces, sentence case; raw graph ids never show", async () => {
+    const root = await mountWizard();
+    // ageBand's raw id "early-reader" reads as warm copy, not graph-speak.
+    expect(pressableByLabel(root, "Early reader")).toBeTruthy();
+    const text = allText(root.root);
+    expect(text).not.toContain("early-reader");
+    expect(text).not.toContain("beginner"); // sentence-cased to "Beginner"
+  });
+
+  it("tapping a humanized chip still stores the RAW graph id in the submitted answers", async () => {
+    const client = new ScriptedClient();
+    const root = await mountWizard("day", client);
+    await press(pressableByLabel(root, "Early reader"));
+    await press(pressableByLabel(root, "Weave the tale"));
+    expect(client.calls).toHaveLength(1);
+    // The domain answer bag is untouched by display humanization.
+    expect(client.calls[0].answers.ageBand).toBe("early-reader");
   });
 });
 
@@ -296,6 +315,14 @@ describe("Wizard closing-verse toggle", () => {
     expect(toggle().props.accessibilityState?.checked).toBe(true);
     expect(flat(toggle().props.style).borderColor).toBe(palettes.day.accent);
     expect(allText(toggle())).toContain("On");
+  });
+
+  it("carries its question's name for screen readers — 'Closing verse', never a bare Off", async () => {
+    const root = await mountWizard();
+    const toggle = root.root.find(
+      (n) => isHost(n.type, "rn-pressable") && n.props.testID === "closingVerse",
+    );
+    expect(toggle.props.accessibilityLabel).toBe("Closing verse");
   });
 });
 
@@ -360,6 +387,16 @@ describe("Wizard weaving (loading) state", () => {
     expect(textInputByTestID(root, "world")).toBeUndefined();
     expectEveryTextBounded(root);
   });
+
+  it("the wait card is a polite live region — weaving is voiced, not silent", async () => {
+    const client = new ScriptedClient(0, true); // hangs — the weave never settles
+    const root = await mountWizard("day", client);
+    await pressNoSettle(pressableByLabel(root, "Weave the tale"));
+
+    const wait = root.root.findAll((n) => isHost(n.type, "rn-animated-view"))[0];
+    expect(wait).toBeTruthy();
+    expect(wait.props.accessibilityLiveRegion).toBe("polite");
+  });
 });
 
 describe("Wizard §7 failure escape (error state ONLY)", () => {
@@ -377,6 +414,17 @@ describe("Wizard §7 failure escape (error state ONLY)", () => {
     // The exception's message stays internal — no dev-speak on the page.
     expect(allText(root.root)).not.toContain("ECONNREFUSED");
     expectEveryTextBounded(root);
+  });
+
+  it("the failure copy is announced — a polite live-region alert, not a silent swap", async () => {
+    const root = await mountWizard("day", new ScriptedClient(Infinity as unknown as number));
+    await press(pressableByLabel(root, "Weave the tale"));
+
+    const err = root.root.find(
+      (n) => isHost(n.type, "rn-text") && allText(n).includes("Your choices are safe"),
+    );
+    expect(err.props.accessibilityLiveRegion).toBe("polite");
+    expect(err.props.accessibilityRole).toBe("alert");
   });
 
   it("Try again is the accent pill of the error state — Weave the tale steps aside", async () => {

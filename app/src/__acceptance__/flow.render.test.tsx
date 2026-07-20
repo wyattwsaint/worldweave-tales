@@ -90,7 +90,7 @@ async function runFlow(overrides?: { world?: string; hero?: string; villain?: st
   const hero = overrides?.hero ?? "Pip";
   const villain = overrides?.villain ?? "Gloom";
   await act(async () => {
-    pressableByLabel(root, "solid").props.onPress();
+    pressableByLabel(root, "Solid").props.onPress();
   });
   await act(async () => {
     textInputByTestID(root, "world").props.onChangeText(world);
@@ -155,7 +155,7 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     expect(textInputByTestID(root, "hero")).toBeTruthy();
     // Reveal the Solid/Epic villain node by switching tiers.
     act(() => {
-      pressableByLabel(root, "solid").props.onPress();
+      pressableByLabel(root, "Solid").props.onPress();
     });
     expect(textInputByTestID(root, "villain")).toBeTruthy();
   });
