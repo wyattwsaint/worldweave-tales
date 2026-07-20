@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
  * its screen from this list — the list only ever shrinks.
  */
 
-const LEGACY = new Set(["CardPickScreen.tsx", "LibraryScreen.tsx", "WizardScreen.tsx"]);
+const LEGACY = new Set(["LibraryScreen.tsx", "WizardScreen.tsx"]);
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRS = ["screens", "components"];
