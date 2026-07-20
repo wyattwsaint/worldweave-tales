@@ -3,8 +3,8 @@
 Locked 2026-07-19 via grill session (alignment gate) on `feat/ui-overhaul-5`.
 Canonical reference for the #5 rebuild and for #6 (icon/splash) and #9 (loading
 animation), which inherit the motif and palette. Visual specifics (final hexes,
-motif drawing) are **pending prototype confirmation** — direction below is locked,
-execution values may be tuned by the prototype session.
+motif drawing) were **confirmed by the prototype session, user-approved
+2026-07-19** — see the appendix for the locked execution values.
 
 ## Decisions
 
@@ -99,3 +99,73 @@ the design prototype and on-device review, not unit tests.
 - Tablet: portrait-first, max content width on large screens.
 - Touch targets ≥ 44pt; screen-reader labels on every interactive element.
 - Apply `frontend-design` + `the-10k-checklist` skills during token/screen work.
+
+## Appendix — Prototype-confirmed values (2026-07-19)
+
+Confirmed by the throwaway Viewer proof (user-approved 2026-07-19). The
+prototype file is deleted; these verdicts are the record.
+
+### Final hexes (AA-verified, day / night)
+
+Contrast ratios computed against the stated ground:
+
+- `bg` `#F3E8D2` / `#131A31`
+- `surface` `#FBF4E4` / `#1B2340`
+- `ink` `#3E3325` / `#E7DCC3` — 11.2 / 11.3 vs surface
+- `ink2` `#6C5C46` / `#A89D83` — 5.9 / 5.7 vs surface
+- `accent` `#A16207` **both modes** — 4.5 / 3.1 vs surface —
+  **LARGE TEXT / UI ONLY, never body-size text** (night is below 4.5:1)
+- `accent-ink` `#FFFBEF` — 4.8 vs accent
+- `line` `#DACBAB` / `#2E3A5C` — decorative, exempt
+
+### Body prose
+
+Alegreya Regular 19px, 1.6 leading, ~34ch measure at 390pt width. Glyph size
+wins over the canonical 45–75ch measure for dim-room read-aloud: 19px stays
+legible at arm's length in low light, and the short ~34ch line plus generous
+leading keeps the return sweep easy when the parent's eyes leave the page for
+the child and come back mid-beat.
+
+### Type scale
+
+- **Display (arc title):** Alegreya ExtraBold 800, 27px, 1.15 line-height.
+- **Spine/stage line:** Alegreya SC 500, 13.5px, .06em tracking.
+- **Chrome:** Alegreya SC — buttons 700 / 15px / .04em; back link 500 / 15px;
+  world name 700 / 14px / .08em. Numerals (beat count): Alegreya Sans 500,
+  14px, tabular figures.
+- **Entity name:** Alegreya Medium 500, 14.5px (24px in the full-screen art
+  caption).
+- **Entity role:** Alegreya SC 500, 11.5px, .05em (14px in the art caption).
+- **Prose:** Alegreya Regular 400, 19px / 1.6 (see above).
+- **Drop cap:** first paragraph only — Alegreya ExtraBold, 3.3em, accent amber
+  (large-text exemption).
+
+### Layout
+
+- **Story card:** radius 14, side margins 16, padding 14 / 20 / 12, 1px `line`
+  border, soft ink-tinted shadow.
+- **Entity-art tiles:** 2:1 aspect, radius 8, slight counter-rotations
+  (−0.7° / +0.5°) for a hand-placed feel.
+- **Header vignette:** 141×96.
+- **Buttons:** pill (999 radius), min-height 44pt.
+
+### Motif verdict — A
+
+**A wins:** small header bookplate vignette on the Viewer. B (oversized
+low-opacity watermark behind content) rejected — the opaque story card leaves
+it no canvas, even at 32% amber-tinted opacity. The full scene still carries
+splash, empty states, and the #9 loading animation per §1.
+
+### Copy rule — "page"
+
+Reader-facing UI says **"page"**, never "beat": "Page four", "dealt this
+page", "Next page", including aria-labels. "Beat" remains internal domain
+language only (code, docs, CONTEXT.md).
+
+### Viewer interaction — entity-art lightbox
+
+Entity-art tiles expand to a full-screen in-frame lightbox: tap a tile →
+palette-aware art plate plus entity name/role caption; dismiss via tap
+anywhere, ✕, or Esc; ~200ms fade/scale-in entrance.
+
+These values are enforced by the §8 tokens contract tests.
