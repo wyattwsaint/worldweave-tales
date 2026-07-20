@@ -18,8 +18,11 @@ import type { BlobFs } from "../storage/blobStore";
  * - one surface card per pending role (hairline `line` border, radius 14);
  * - variant look tiles: 2:1 art, radius 8, hand-placed counter-rotations on
  *   the row's ends; labelled buttons with >=44pt targets + selected state;
+ *   rows wrap (minWidth per look) so extra variants never shrink the targets;
  * - the chosen look carries an accent edge and an accent "Chosen" pill;
- * - confirm is the accent pill button, gated until every role has a pick;
+ *   selection recolors a constant-width border (no layout jump on tap);
+ * - confirm: enabled is the accent pill; the gated state is a quiet readable
+ *   pill (surface ground, hairline `line` border, full-opacity ink2 copy);
  * - reader-facing copy never says "beat" (accessibility labels included);
  * - both palettes via ThemeContext — zero hardcoded color/font in the screen;
  * - dynamic type stays bounded (maxFontSizeMultiplier) on every text.
@@ -144,14 +147,17 @@ function cardPickParams(): CardPickParams {
   return { response, answers };
 }
 
-async function mountCardPick(mode: ThemeMode = "day"): Promise<ReactTestRenderer> {
+async function mountCardPick(
+  mode: ThemeMode = "day",
+  params: CardPickParams = cardPickParams(),
+): Promise<ReactTestRenderer> {
   let root!: ReactTestRenderer;
   await act(async () => {
     root = TestRenderer.create(
       <ThemeProvider mode={mode}>
         <NavProvider>
           <NavProbe />
-          <CardPickScreen params={cardPickParams()} />
+          <CardPickScreen params={params} />
         </NavProvider>
       </ThemeProvider>,
     );
@@ -228,6 +234,8 @@ describe("CardPick variant look tiles", () => {
       const s = flat(plate.props.style);
       expect(s.borderRadius).toBe(8);
       expect(s.borderColor).toBe(palettes.day.line);
+      // Same width as the selected state — selection must not move layout.
+      expect(s.borderWidth).toBe(2);
     }
   });
 
@@ -253,11 +261,51 @@ describe("CardPick variant look tiles", () => {
 
   it("a real look renders as art; a stub keeps the visible placeholder ref", async () => {
     const root = await mountCardPick();
-    const uris = root.root
-      .findAll((n) => isHost(n.type, "rn-image"))
-      .map((n) => n.props.source?.uri);
-    expect(uris).toContain("https://cdn/hero-a.png");
+    const images = root.root.findAll((n) => isHost(n.type, "rn-image"));
+    expect(images.map((n) => n.props.source?.uri)).toContain("https://cdn/hero-a.png");
+    // No dead label on the art: the parent Pressable's label is the one voiced.
+    for (const img of images) {
+      expect(img.props.accessibilityLabel).toBeUndefined();
+    }
     expect(allText(root.root)).toContain("stub-image:hero#2");
+  });
+
+  it("six looks wrap instead of shrinking: minWidth per look, flexWrap on the row", async () => {
+    const params = cardPickParams();
+    params.response.pendingCardChoices = [
+      {
+        entityId: "hero-e",
+        role: "hero",
+        appearanceNote: "a tiny mouse in a red cloak",
+        variantImageRefs: [
+          "https://cdn/hero-a.png",
+          "https://cdn/hero-b.png",
+          "https://cdn/hero-c.png",
+          "https://cdn/hero-d.png",
+          "https://cdn/hero-e.png",
+          "https://cdn/hero-f.png",
+        ],
+      },
+    ];
+    const root = await mountCardPick("day", params);
+    const looks = root.root.findAll(
+      (n) =>
+        isHost(n.type, "rn-pressable") &&
+        typeof n.props.accessibilityLabel === "string" &&
+        n.props.accessibilityLabel.startsWith("Pick look"),
+    );
+    expect(looks).toHaveLength(6);
+    // 140pt keeps every 2:1 plate >=70pt tall — comfortably over the 44pt floor.
+    for (const look of looks) {
+      expect(flat(look.props.style).minWidth as number).toBeGreaterThanOrEqual(140);
+    }
+    const rows = root.root.findAll(
+      (n) => isHost(n.type, "rn-view") && flat(n.props.style).flexDirection === "row",
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    for (const row of rows) {
+      expect(flat(row.props.style).flexWrap).toBe("wrap");
+    }
   });
 });
 
@@ -270,6 +318,8 @@ describe("CardPick selection", () => {
     expect(tile.props.accessibilityState?.selected).toBe(true);
     const plate = tile.findAll((n) => isHost(n.type, "rn-view") && flat(n.props.style).aspectRatio === 2)[0];
     expect(flat(plate.props.style).borderColor).toBe(palettes.day.accent);
+    // Selection only recolors the border — width stays 2, so no 1px jump on tap.
+    expect(flat(plate.props.style).borderWidth).toBe(2);
     expect(allText(tile)).toContain("Chosen");
   });
 
@@ -285,7 +335,7 @@ describe("CardPick selection", () => {
 });
 
 describe("CardPick confirm", () => {
-  it("stays gated (disabled accent pill) until every role has a pick", async () => {
+  it("stays gated until every role has a pick — a quiet readable pill, not a dimmed accent", async () => {
     const root = await mountCardPick();
     expect(pressableByLabel(root, "Weave the tale")).toBeUndefined();
     const gate = pressableByLabel(root, "Pick every look to continue")!;
@@ -294,9 +344,19 @@ describe("CardPick confirm", () => {
     expect(gate.props.accessibilityState?.disabled).toBe(true);
     expect(gate.props.accessibilityRole).toBe("button");
     const s = flat(gate.props.style);
-    expect(s.backgroundColor).toBe(palettes.day.accent);
+    // Quiet state: surface ground + hairline `line` border, never the dimmed
+    // accent pill (accent at opacity 0.4 read ~1.8:1 in day mode).
+    expect(s.backgroundColor).toBe(palettes.day.surface);
+    expect(s.borderColor).toBe(palettes.day.line);
+    expect(s.opacity).toBeUndefined();
     expect(s.borderRadius).toBe(999);
     expect(s.minHeight as number).toBeGreaterThanOrEqual(44);
+    // The only copy explaining the gate reads at full contrast: ink2, no dim.
+    const label = gate.findAll((n) => isHost(n.type, "rn-text"))[0];
+    const ts = flat(label.props.style);
+    expect(ts.color).toBe(palettes.day.ink2);
+    expect(ts.color).not.toBe(palettes.day.accentInk);
+    expect(ts.opacity).toBeUndefined();
   });
 
   it("with every look picked, Weave the tale canonizes and opens the Viewer", async () => {

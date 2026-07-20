@@ -14,13 +14,17 @@ import { useTheme, type Theme } from "../theme/ThemeContext";
  * For each pending hero/villain choice the parent taps one look. Each pending
  * role sits on its own surface card (hairline border, radius 14); its looks
  * render as 2:1 art plates (radius 8) with the row's ends counter-rotated for
- * the hand-placed feel. Real variant art (a remote URL or downloaded blob)
+ * the hand-placed feel; rows wrap (minWidth per look) so extra variants never
+ * shrink the touch targets. Real variant art (a remote URL or downloaded blob)
  * renders as an <Image>; a non-renderable ref (e.g. "stub-image:hero#0")
  * degrades to a labeled text placeholder tile. The chosen look carries an
- * accent edge and an accent "Chosen" pill; confirm is the accent pill button,
- * gated until every role is picked. Once every role is picked, we build the
- * Card objects and canonize each via applyCardPick. All color/type comes from
- * the theme — no hardcoded values (one-token-system tripwire enforced).
+ * accent edge (recolor only — the border width never moves layout) and an
+ * accent "Chosen" pill. Confirm is the accent pill button once every role is
+ * picked; until then it's a quiet readable pill (surface ground, hairline
+ * border, full-opacity ink2 copy — never a dimmed accent). Once every role is
+ * picked, we build the Card objects and canonize each via applyCardPick. All
+ * color/type comes from the theme — no hardcoded values (one-token-system
+ * tripwire enforced).
  */
 
 const LOOK_WORDS = ["one", "two", "three", "four", "five", "six"];
@@ -93,12 +97,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
                   >
                     <View style={[styles.lookArt, tilt, on && styles.lookArtOn]}>
                       {source ? (
-                        <Image
-                          style={styles.lookImage}
-                          source={source}
-                          resizeMode="cover"
-                          accessibilityLabel={`${choice.role} variant`}
-                        />
+                        <Image style={styles.lookImage} source={source} resizeMode="cover" />
                       ) : (
                         <Text style={styles.lookPlaceholder} maxFontSizeMultiplier={1.4}>
                           {ref}
@@ -126,7 +125,10 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
           style={[styles.primary, !allPicked && styles.primaryDisabled]}
           onPress={onConfirm}
         >
-          <Text style={styles.primaryText} maxFontSizeMultiplier={1.4}>
+          <Text
+            style={[styles.primaryText, !allPicked && styles.primaryTextDisabled]}
+            maxFontSizeMultiplier={1.4}
+          >
             {allPicked ? "Weave the tale" : "Pick every look to continue"}
           </Text>
         </Pressable>
@@ -198,14 +200,18 @@ function makeStyles({ colors, type }: Theme) {
       elevation: 3,
     },
     role: { ...type.spineStage, color: colors.ink2, textTransform: "capitalize" },
-    lookRow: { flexDirection: "row", gap: 12 },
-    look: { flex: 1, minWidth: 0, minHeight: 44 },
+    // Wrap + minWidth: more variants than fit a line wrap to the next one
+    // instead of shrinking below a comfortable touch target (140pt-wide 2:1
+    // plate = 70pt tall, well past the 44pt floor).
+    lookRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+    look: { flex: 1, minWidth: 140, minHeight: 44 },
     // Slight counter-rotations for a hand-placed feel.
     tiltLeft: { transform: [{ rotate: "-0.7deg" }] },
     tiltRight: { transform: [{ rotate: "0.5deg" }] },
+    // Constant borderWidth in both states — selection recolors, never resizes.
     lookArt: {
       aspectRatio: 2,
-      borderWidth: 1,
+      borderWidth: 2,
       borderColor: colors.line,
       borderRadius: 8,
       overflow: "hidden",
@@ -214,7 +220,7 @@ function makeStyles({ colors, type }: Theme) {
       backgroundColor: colors.bg,
     },
     // Selection reads as the lamp catching the chosen frame — accent is UI-only here.
-    lookArtOn: { borderWidth: 2, borderColor: colors.accent },
+    lookArtOn: { borderColor: colors.accent },
     lookImage: { width: "100%", height: "100%" },
     lookPlaceholder: { ...type.entityRole, color: colors.ink2, textAlign: "center", padding: 4 },
     // The "Chosen" pill: accentInk on accent passes AA at any size.
@@ -239,7 +245,11 @@ function makeStyles({ colors, type }: Theme) {
       borderWidth: 1.5,
       borderColor: colors.accent,
     },
-    primaryDisabled: { opacity: 0.4 },
+    // Gated state: a quiet, still-readable pill (ink2 on surface = 5.9/5.7:1),
+    // mirroring the Viewer's ghost button — never the accent pill dimmed to
+    // ~1.8:1. Border width stays 1.5 so enabling doesn't move layout.
+    primaryDisabled: { backgroundColor: colors.surface, borderColor: colors.line },
     primaryText: { ...type.button, color: colors.accentInk },
+    primaryTextDisabled: { color: colors.ink2 },
   });
 }
