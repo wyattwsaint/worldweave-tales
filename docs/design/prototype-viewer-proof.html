@@ -167,7 +167,8 @@
     gap: 12px;
     margin-bottom: 14px;
   }
-  .entity-card { flex: 1; min-width: 0; }
+  .entity-card { flex: 1; min-width: 0; cursor: pointer; }
+  .entity-card:active { transform: scale(.98); }
   .entity-card .card-art {
     position: relative;
     aspect-ratio: 2 / 1;
@@ -203,6 +204,59 @@
     color: var(--ink2);
     margin-top: 1px;
   }
+
+  /* ---------- full-screen entity art (tap a card to open) ---------- */
+  .art-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 64px 20px 60px;      /* bottom clears home-indicator / rig switcher */
+    cursor: pointer;              /* whole overlay dismisses on tap */
+    animation: art-in .2s ease-out;
+  }
+  .art-overlay[hidden] { display: none; }
+  @keyframes art-in {
+    from { opacity: 0; transform: scale(.96); }
+    to   { opacity: 1; transform: none; }
+  }
+  .art-plate {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background:                   /* tile hatch at 2x pitch — reads as zoom */
+      repeating-linear-gradient(45deg,
+        transparent 0 10px,
+        color-mix(in srgb, var(--ink) 7%, transparent) 10px 12px);
+    display: grid;
+    place-items: center;
+  }
+  .art-plate svg { width: 120px; height: 120px; }
+  .art-caption { text-align: center; }
+  .art-caption .entity-name { font-size: 24px; white-space: normal; }
+  .art-caption .entity-role { font-size: 14px; margin-top: 3px; }
+  .art-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 44px;                  /* touch target ≥ 44pt */
+    height: 44px;
+    border-radius: 999px;
+    border: 1.5px solid var(--accent);  /* ghost-button treatment */
+    background: transparent;
+    color: var(--ink2);
+    font-family: "Alegreya SC", serif;
+    font-weight: 700;
+    font-size: 17px;
+    cursor: pointer;
+  }
+  .art-close:active { transform: scale(.96); }
 
   /* ----------------------------------------------------------------
      BODY TEXT VERDICT — 19px Alegreya, line-height 1.6 (30.4px),
@@ -380,7 +434,7 @@
 
   <main class="beat-card" aria-label="Page four">
     <div class="cards-row">
-      <figure class="entity-card">
+      <figure class="entity-card" data-art="pip">
         <div class="card-art" role="img" aria-label="Card art placeholder: Pip Thistledown">
           <svg viewBox="-6 -6 12 12" fill="var(--accent)"><use href="#spark"  transform="scale(.9)"/></svg>
         </div>
@@ -389,7 +443,7 @@
           <span class="entity-role">hero &middot; dealt page one</span>
         </figcaption>
       </figure>
-      <figure class="entity-card">
+      <figure class="entity-card" data-art="lantern">
         <div class="card-art" role="img" aria-label="Card art placeholder: The Old Cedar Lantern">
           <svg viewBox="-6 -6 12 12" fill="var(--accent)"><use href="#spark" transform="scale(.9)"/></svg>
         </div>
@@ -421,6 +475,18 @@
 
   <div class="motif-watermark" aria-hidden="true">
     <svg><use href="#storytime"/></svg>
+  </div>
+
+  <!-- full-screen entity art — tap a card to open; ✕ / tap anywhere / Esc closes -->
+  <div class="art-overlay" id="artOverlay" role="dialog" aria-modal="true" hidden>
+    <button class="art-close" type="button" aria-label="Close entity art">&#10005;</button>
+    <div class="art-plate" role="img" aria-label="Card art placeholder, full screen">
+      <svg viewBox="-6 -6 12 12" fill="var(--accent)"><use href="#spark" transform="scale(.9)"/></svg>
+    </div>
+    <p class="art-caption">
+      <span class="entity-name" id="artName"></span>
+      <span class="entity-role" id="artRole"></span>
+    </p>
   </div>
 
 </div>
@@ -487,6 +553,50 @@
     apply(ORDER[n][0], ORDER[n][1]);
     e.preventDefault();
   });
+
+  // ---------- full-screen entity art (?art=pip|lantern) ----------
+  var overlay = document.getElementById("artOverlay");
+
+  function setArtParam(id) {
+    try {
+      var u = new URL(location.href);
+      if (id) u.searchParams.set("art", id);
+      else u.searchParams.delete("art");
+      history.replaceState(null, "", u);
+    } catch (e) { /* file:// oddities — overlay still works */ }
+  }
+
+  function openArt(id) {
+    if (!id || !/^[a-z]+$/.test(id)) return;
+    var card = document.querySelector('.entity-card[data-art="' + id + '"]');
+    if (!card) return;
+    document.getElementById("artName").textContent =
+      card.querySelector(".entity-name").textContent;
+    document.getElementById("artRole").textContent =
+      card.querySelector(".entity-role").textContent;
+    overlay.hidden = false;
+    setArtParam(id);
+  }
+
+  function closeArt() {
+    overlay.hidden = true;
+    overlay.style.animation = ""; // restore entrance fade for interactive opens
+    setArtParam(null);
+  }
+
+  document.querySelectorAll(".entity-card").forEach(function (c) {
+    c.addEventListener("click", function () { openArt(c.dataset.art); });
+  });
+  overlay.addEventListener("click", closeArt); // ✕ sits inside — bubbles here too
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || overlay.hidden) return; // ←/→ switcher untouched
+    closeArt();
+    e.preventDefault();
+  });
+  if (q.get("art")) { // from URL: skip the fade so headless capture is deterministic
+    overlay.style.animation = "none";
+    openArt(q.get("art"));
+  }
 })();
 </script>
 </body>
