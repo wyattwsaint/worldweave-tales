@@ -122,6 +122,58 @@ describe("body prose type (read-aloud)", () => {
   });
 
   it("line height is 1.6x the font size (RN convention: absolute units)", () => {
-    expect(typography.body.lineHeight).toBeCloseTo(typography.body.fontSize * 1.6, 5);
+    expect(typography.body.lineHeight).toBeCloseTo(typography.body.fontSize! * 1.6, 5);
+  });
+});
+
+describe("type scale (ui-direction.md appendix, prototype-confirmed)", () => {
+  it("display (arc title): Alegreya ExtraBold 27px, 1.15 line-height", () => {
+    expect(typography.display.fontFamily).toBe("Alegreya_800ExtraBold");
+    expect(typography.display.fontSize).toBe(27);
+    expect(typography.display.lineHeight).toBeCloseTo(27 * 1.15, 5);
+  });
+
+  it("spine/stage line: Alegreya SC 500 at 13.5px, .06em tracking", () => {
+    expect(typography.spineStage.fontFamily).toBe("AlegreyaSC_500Medium");
+    expect(typography.spineStage.fontSize).toBe(13.5);
+    expect(typography.spineStage.letterSpacing).toBeCloseTo(13.5 * 0.06, 5);
+  });
+
+  it("chrome — buttons: Alegreya SC 700 at 15px, .04em tracking", () => {
+    expect(typography.button.fontFamily).toBe("AlegreyaSC_700Bold");
+    expect(typography.button.fontSize).toBe(15);
+    expect(typography.button.letterSpacing).toBeCloseTo(15 * 0.04, 5);
+  });
+
+  it("chrome — back link: Alegreya SC 500 at 15px", () => {
+    expect(typography.backLink.fontFamily).toBe("AlegreyaSC_500Medium");
+    expect(typography.backLink.fontSize).toBe(15);
+  });
+
+  it("chrome — world name: Alegreya SC 700 at 14px, .08em tracking", () => {
+    expect(typography.worldName.fontFamily).toBe("AlegreyaSC_700Bold");
+    expect(typography.worldName.fontSize).toBe(14);
+    expect(typography.worldName.letterSpacing).toBeCloseTo(14 * 0.08, 5);
+  });
+
+  it("chrome — page-count numerals: Alegreya Sans 500 at 14px, tabular figures", () => {
+    expect(typography.pageCount.fontFamily).toBe("AlegreyaSans_500Medium");
+    expect(typography.pageCount.fontSize).toBe(14);
+    expect(typography.pageCount.fontVariant).toContain("tabular-nums");
+  });
+
+  it("entity name: Alegreya Medium 14.5px tile / 24px art caption", () => {
+    expect(typography.entityName.fontFamily).toBe("Alegreya_500Medium");
+    expect(typography.entityName.fontSize).toBe(14.5);
+    expect(typography.entityNameArt.fontFamily).toBe("Alegreya_500Medium");
+    expect(typography.entityNameArt.fontSize).toBe(24);
+  });
+
+  it("entity role: Alegreya SC 500 11.5px/.05em tile / 14px art caption", () => {
+    expect(typography.entityRole.fontFamily).toBe("AlegreyaSC_500Medium");
+    expect(typography.entityRole.fontSize).toBe(11.5);
+    expect(typography.entityRole.letterSpacing).toBeCloseTo(11.5 * 0.05, 5);
+    expect(typography.entityRoleArt.fontFamily).toBe("AlegreyaSC_500Medium");
+    expect(typography.entityRoleArt.fontSize).toBe(14);
   });
 });

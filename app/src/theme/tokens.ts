@@ -11,6 +11,10 @@
  * (a ThemeContext resolves day/night via the system scheme in a later slice).
  */
 
+// Type-only: erased at compile, so this module stays runnable in plain node
+// (the contract tests import it without any react-native runtime).
+import type { TextStyle } from "react-native";
+
 export type ThemeMode = "day" | "night";
 
 export interface Palette {
@@ -68,10 +72,11 @@ export const palettes: Record<ThemeMode, Palette> = { day, night };
 export const bodyTextColors = ["ink", "ink2"] as const satisfies readonly (keyof Palette)[];
 
 /**
- * Type tokens. Alegreya superfamily only (loaded via `@expo-google-fonts` +
- * `expo-font` in the screen slice; family names follow that package's
- * convention). RN convention: `fontSize`/`lineHeight` in absolute units —
- * body line height is 1.6 × 19 = 30.4.
+ * Type tokens — the full prototype-confirmed scale (ui-direction.md appendix).
+ * Alegreya superfamily only (loaded via `@expo-google-fonts` + `expo-font`;
+ * family names follow that package's convention). RN conventions: `fontSize`/
+ * `lineHeight` in absolute units (body: 1.6 × 19 = 30.4; display: 1.15 × 27 =
+ * 31.05) and `letterSpacing` in units, so em tracking is `em × fontSize`.
  */
 export const typography = {
   /** Read-aloud body prose. */
@@ -80,4 +85,60 @@ export const typography = {
     fontSize: 19,
     lineHeight: 30.4,
   },
-} as const;
+  /** Display — arc titles, headers. */
+  display: {
+    fontFamily: "Alegreya_800ExtraBold",
+    fontSize: 27,
+    lineHeight: 31.05,
+  },
+  /** Spine/stage line under the title ("Page four · virtue tested"). */
+  spineStage: {
+    fontFamily: "AlegreyaSC_500Medium",
+    fontSize: 13.5,
+    letterSpacing: 0.81, // .06em
+  },
+  /** Chrome — button labels (small caps). */
+  button: {
+    fontFamily: "AlegreyaSC_700Bold",
+    fontSize: 15,
+    letterSpacing: 0.6, // .04em
+  },
+  /** Chrome — the ‹ back link. */
+  backLink: {
+    fontFamily: "AlegreyaSC_500Medium",
+    fontSize: 15,
+  },
+  /** Chrome — the top-bar world name (small caps, wide-tracked). */
+  worldName: {
+    fontFamily: "AlegreyaSC_700Bold",
+    fontSize: 14,
+    letterSpacing: 1.12, // .08em
+  },
+  /** Chrome numerals — the page count ("4 / 8"), tabular figures. */
+  pageCount: {
+    fontFamily: "AlegreyaSans_500Medium",
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+  },
+  /** Entity name on a tile caption. */
+  entityName: {
+    fontFamily: "Alegreya_500Medium",
+    fontSize: 14.5,
+  },
+  /** Entity name in the full-screen art caption. */
+  entityNameArt: {
+    fontFamily: "Alegreya_500Medium",
+    fontSize: 24,
+  },
+  /** Entity role on a tile caption (small caps). */
+  entityRole: {
+    fontFamily: "AlegreyaSC_500Medium",
+    fontSize: 11.5,
+    letterSpacing: 0.575, // .05em
+  },
+  /** Entity role in the full-screen art caption. */
+  entityRoleArt: {
+    fontFamily: "AlegreyaSC_500Medium",
+    fontSize: 14,
+  },
+} satisfies Record<string, TextStyle>;

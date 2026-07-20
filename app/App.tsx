@@ -1,4 +1,5 @@
 import { StatusBar } from "expo-status-bar";
+import { ThemeProvider } from "./src/theme/ThemeContext";
 import { NavProvider, useNav } from "./src/nav/NavContext";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import WizardScreen from "./src/screens/WizardScreen";
@@ -16,10 +17,14 @@ import type { ProxyClientLike } from "./src/api/proxyClient";
  */
 export default function App({ client }: { client?: ProxyClientLike } = {}) {
   return (
-    <NavProvider>
-      <CurrentScreen client={client} />
-      <StatusBar style="auto" />
-    </NavProvider>
+    // Theme resolves day/night from the system scheme (ui-direction.md §4);
+    // "auto" keeps the status bar text legible against either palette.
+    <ThemeProvider>
+      <NavProvider>
+        <CurrentScreen client={client} />
+        <StatusBar style="auto" />
+      </NavProvider>
+    </ThemeProvider>
   );
 }
 

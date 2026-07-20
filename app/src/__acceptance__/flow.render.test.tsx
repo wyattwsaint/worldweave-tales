@@ -168,15 +168,26 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     expect(cardPickText).toContain("stub-image:villain#0");
   });
 
-  check("A3 Viewer renders the finished tale: title, all spine beats, and chosen hero/villain names", async () => {
-    const { viewerText } = await runFlow({ hero: "Pip", villain: "Gloom" });
-    expect(viewerText).toContain("Your Tale");
+  check("A3 Viewer pages through the finished tale: title, all spine beats, and chosen hero/villain names", async () => {
+    // The #5 rebuild shows ONE page (beat) per screen — the reader turns pages
+    // with "Next page", so the whole tale is the union of what each page shows.
+    const { root, viewerText } = await runFlow({ hero: "Pip", villain: "Gloom" });
+    let seen = viewerText;
+    for (let turns = 0; turns < 12; turns++) {
+      const next = pressableByLabel(root, "Next page");
+      if (!next) break;
+      await act(async () => {
+        next.props.onPress();
+      });
+      seen += " " + allText(root.root);
+    }
+    expect(seen).toContain("Your Tale");
     for (const beat of ["setup", "call-to-adventure", "virtue-tested", "good-triumphs", "gentle-hope-hook"]) {
-      expect(viewerText).toContain(beat);
+      expect(seen).toContain(beat);
     }
     // Parent-chosen card names carried through canonization.
-    expect(viewerText).toContain("Pip");
-    expect(viewerText).toContain("Gloom");
+    expect(seen).toContain("Pip");
+    expect(seen).toContain("Gloom");
   });
 
   check("A4 Viewer beat text reflects the chosen teaching virtue ('courage' default)", async () => {

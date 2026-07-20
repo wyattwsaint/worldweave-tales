@@ -1,23 +1,90 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { Card, Storyworld } from "@wwt/domain";
 import { useNav, type ViewerParams } from "../nav/NavContext";
 import { artDownloader, blobFs, store, whenStoreReady } from "../storage/store";
 import { arcTitle, persistFinishedWorld } from "../storage/persistence";
 import { artImageSource } from "../storage/artSource";
+import { useTheme, type Theme } from "../theme/ThemeContext";
+import StorytimeVignette from "../components/StorytimeVignette";
 
 /**
- * Viewer. Renders the finished Arc one section per Beat (spine label + text),
- * with each beat's dealt cards shown as locked art: a blob-backed <Image> when
- * the card has real art (a downloaded blob or a remote URL), else a labeled text
- * placeholder tile (e.g. a `stub-image:*` ref). Durably persists the world AND its arc on
- * mount — downloading each card's ephemeral remote art to a local blob first,
- * so a re-read survives the Recraft URL expiring (SPEC §2.22, §5).
+ * Viewer — the #5 proof screen, built to the locked direction
+ * (docs/design/ui-direction.md + prototype-confirmed appendix).
+ *
+ * One BEAT of the arc per rendered PAGE — "beat" stays internal domain
+ * language; every reader-facing string (and accessibility label) says "page".
+ * Layout: top bar (‹ Shelf / world label / page count) → storytime bookplate
+ * vignette (motif A) → title + spine-stage line → the page card (surface,
+ * hairline border, radius 14) holding this page's dealt entity-art tiles and
+ * the read-aloud prose → pager (‹ Back, progress dots, Next page on accent;
+ * the last page offers New story). Tapping a tile opens a full-screen
+ * palette-aware art lightbox (built-in Animated fade/scale-in; reanimated is
+ * deferred to #9). All color/type comes from the theme — no hardcoded values.
+ *
+ * Durably persists the world AND its arc on mount — downloading each card's
+ * ephemeral remote art to a local blob first, so a re-read survives the
+ * Recraft URL expiring (SPEC §2.22, §5). Library re-opens skip the save.
  */
+
+const PAGE_WORDS = [
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+];
+
+/** Reader-facing page number as a word ("Page four"); digits past twelve. */
+function pageWord(n: number): string {
+  return PAGE_WORDS[n - 1] ?? String(n);
+}
+
+/** Spine ids are internal ("virtue-tested"); readers see words ("virtue tested"). */
+function humanizeSpine(spine: string): string {
+  return spine.replace(/-/g, " ");
+}
+
 export default function ViewerScreen({ params }: { params: ViewerParams }) {
   const { navigate, goHome } = useNav();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { arc, cards, bible, source } = params;
   const byId = new Map<string, Card>(cards.map((c) => [c.entityId, c]));
+
+  const [page, setPage] = useState(0);
+  const beats = arc.beats;
+  const total = Math.max(beats.length, 1);
+  const beat = beats[Math.min(page, total - 1)];
+  const isLast = page >= total - 1;
+  const dealt = (beat?.dealtCardIds ?? [])
+    .map((id) => byId.get(id))
+    .filter((c): c is Card => Boolean(c));
+
+  /** Full-screen entity-art lightbox: the tapped card, or null when closed. */
+  const [artCard, setArtCard] = useState<Card | null>(null);
+  const artIn = useRef(new Animated.Value(0)).current;
+  function openArt(card: Card) {
+    setArtCard(card);
+    artIn.setValue(0);
+    Animated.timing(artIn, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+  }
+
   const [persistError, setPersistError] = useState<string | null>(null);
   /** The in-flight on-mount persist; ‹ Shelf awaits it so the shelf never misses the story. */
   const persistDone = useRef<Promise<void> | null>(null);
@@ -64,112 +131,398 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
     goHome();
   }
 
+  /** "hero · dealt this page" — or the page (in words) that first dealt it. */
+  function dealtLine(card: Card): string {
+    const firstIdx = beats.findIndex((b) => b.dealtCardIds.includes(card.entityId));
+    return firstIdx === page
+      ? `${card.role} · dealt this page`
+      : `${card.role} · dealt page ${pageWord(firstIdx + 1)}`;
+  }
+
+  const pagePosition = `Page ${pageWord(page + 1)} of ${pageWord(total)}`;
+  const paragraphs = (beat?.text ?? "").split(/\n{2,}/).filter((p) => p.trim().length > 0);
+  const artSource = artCard ? artImageSource(artCard.lockedImageRef, blobFs) : null;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Pressable style={styles.shelfLink} onPress={() => void backToShelf()}>
-        <Text style={styles.shelfLinkText}>‹ Shelf</Text>
-      </Pressable>
-      <Text style={styles.title}>Your Tale</Text>
-      <Text style={styles.meta}>
-        {arc.shape} · {arc.ageBand} ·{" "}
-        {arc.teachingPoint.kind === "virtue"
-          ? arc.teachingPoint.virtue
-          : arc.teachingPoint.description}
-      </Text>
+    <View style={styles.screen}>
+      {/* Ambient lamp wash from the top — decorative, the "warm light source". */}
+      <View style={styles.lampWash} pointerEvents="none" />
 
-      {persistError ? <Text style={styles.error}>{persistError}</Text> : null}
-
-      {arc.beats.map((beat, i) => (
-        <View key={`${beat.spineBeat}-${i}`} style={styles.page}>
-          <Text style={styles.spineBeat}>{beat.spineBeat}</Text>
-          <Text style={styles.beatText}>{beat.text}</Text>
-          <View style={styles.cardRow}>
-            {beat.dealtCardIds.map((id) => {
-              const card = byId.get(id);
-              if (!card) return null;
-              const source = artImageSource(card.lockedImageRef, blobFs);
-              return (
-                <View key={id} style={styles.card}>
-                  {source ? (
-                    <Image
-                      style={styles.swatch}
-                      source={source}
-                      resizeMode="cover"
-                      accessibilityLabel={card.canonName}
-                    />
-                  ) : (
-                    <View style={styles.swatch}>
-                      <Text style={styles.swatchLabel}>
-                        {card.lockedImageRef || "Art coming soon"}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.cardName}>{card.canonName}</Text>
-                  <Text style={styles.cardRole}>{card.role}</Text>
-                </View>
-              );
-            })}
-          </View>
+      <View style={styles.column}>
+        <View style={styles.topbar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to the Shelf"
+            style={styles.backLink}
+            onPress={() => void backToShelf()}
+          >
+            <Text style={styles.backLinkText} maxFontSizeMultiplier={1.4}>
+              ‹ Shelf
+            </Text>
+          </Pressable>
+          <Text style={styles.worldName} maxFontSizeMultiplier={1.4}>
+            Your Tale
+          </Text>
+          {/* Decorative duplicate of the dots' spoken position — hidden from a11y. */}
+          <Text
+            style={styles.pageCount}
+            maxFontSizeMultiplier={1.4}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {`${page + 1} / ${total}`}
+          </Text>
         </View>
-      ))}
 
-      {arc.closingVerseEnabled ? (
-        <Text style={styles.verse}>A gentle closing verse would appear here.</Text>
+        <View style={styles.vignette}>
+          <StorytimeVignette />
+        </View>
+
+        <View style={styles.titleBlock}>
+          <Text accessibilityRole="header" style={styles.arcTitle} maxFontSizeMultiplier={1.4}>
+            {arcTitle(arc)}
+          </Text>
+          <Text style={styles.spineStage} maxFontSizeMultiplier={1.4}>
+            {`Page ${pageWord(page + 1)} · ${humanizeSpine(beat?.spineBeat ?? "")}`}
+          </Text>
+        </View>
+
+        {persistError ? (
+          <Text style={styles.error} maxFontSizeMultiplier={1.4}>
+            {persistError}
+          </Text>
+        ) : null}
+
+        <View style={styles.pageCard}>
+          {dealt.length > 0 ? (
+            <View style={styles.cardsRow}>
+              {dealt.map((card, i) => {
+                const source = artImageSource(card.lockedImageRef, blobFs);
+                const tilt =
+                  i === 0 ? styles.tiltLeft : i === dealt.length - 1 ? styles.tiltRight : null;
+                return (
+                  <Pressable
+                    key={card.entityId}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open art for ${card.canonName}`}
+                    style={styles.tile}
+                    onPress={() => openArt(card)}
+                  >
+                    <View style={[styles.tileArt, tilt]}>
+                      {source ? (
+                        <Image
+                          style={styles.tileImage}
+                          source={source}
+                          resizeMode="cover"
+                          accessibilityLabel={card.canonName}
+                        />
+                      ) : (
+                        <Text style={styles.tilePlaceholderText} maxFontSizeMultiplier={1.4}>
+                          {card.lockedImageRef || "Art coming soon"}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.tileName} numberOfLines={1} maxFontSizeMultiplier={1.4}>
+                      {card.canonName}
+                    </Text>
+                    <Text style={styles.tileRole} maxFontSizeMultiplier={1.4}>
+                      {dealtLine(card)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <ScrollView style={styles.proseScroll} contentContainerStyle={styles.proseContent}>
+            {paragraphs.map((p, i) => (
+              <Text
+                key={i}
+                style={[styles.prose, i > 0 && styles.proseGap]}
+                maxFontSizeMultiplier={1.6}
+              >
+                {i === 0
+                  ? [
+                      <Text key="cap" style={styles.dropCap} maxFontSizeMultiplier={1.6}>
+                        {p.slice(0, 1)}
+                      </Text>,
+                      p.slice(1),
+                    ]
+                  : p}
+              </Text>
+            ))}
+            {isLast && arc.closingVerseEnabled ? (
+              <Text style={styles.verse} maxFontSizeMultiplier={1.6}>
+                A gentle closing verse would appear here.
+              </Text>
+            ) : null}
+          </ScrollView>
+        </View>
+
+        <View style={styles.pager}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous page"
+            accessibilityState={{ disabled: page === 0 }}
+            disabled={page === 0}
+            style={[styles.btn, styles.btnGhost, page === 0 && styles.btnDisabled]}
+            onPress={() => setPage((p) => Math.max(0, p - 1))}
+          >
+            <Text style={styles.btnGhostText} maxFontSizeMultiplier={1.4}>
+              ‹ Back
+            </Text>
+          </Pressable>
+
+          <View accessible accessibilityLabel={pagePosition} style={styles.dots}>
+            {beats.map((_, i) => (
+              <View
+                key={i}
+                style={[styles.dot, i < page && styles.dotRead, i === page && styles.dotActive]}
+              />
+            ))}
+          </View>
+
+          {isLast ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="New story"
+              style={[styles.btn, styles.btnSolid]}
+              onPress={() => navigate({ screen: "wizard" })}
+            >
+              <Text style={styles.btnSolidText} maxFontSizeMultiplier={1.4}>
+                New story
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next page"
+              style={[styles.btn, styles.btnSolid]}
+              onPress={() => setPage((p) => Math.min(total - 1, p + 1))}
+            >
+              <Text style={styles.btnSolidText} maxFontSizeMultiplier={1.4}>
+                Next page ›
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      {artCard ? (
+        <Animated.View
+          accessibilityViewIsModal
+          style={[
+            styles.artOverlay,
+            {
+              opacity: artIn,
+              transform: [
+                { scale: artIn.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
+              ],
+            },
+          ]}
+        >
+          {/* Tap anywhere dismisses; the ✕ is the labelled close affordance. */}
+          <Pressable accessible={false} style={styles.artScrim} onPress={() => setArtCard(null)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close entity art"
+              style={styles.artClose}
+              onPress={() => setArtCard(null)}
+            >
+              <Text style={styles.artCloseGlyph} maxFontSizeMultiplier={1.4}>
+                ✕
+              </Text>
+            </Pressable>
+            <View style={styles.artPlate}>
+              {artSource ? (
+                <Image
+                  style={styles.artImage}
+                  source={artSource}
+                  resizeMode="contain"
+                  accessibilityLabel={artCard.canonName}
+                />
+              ) : (
+                <Text style={styles.tilePlaceholderText} maxFontSizeMultiplier={1.4}>
+                  {artCard.lockedImageRef || "Art coming soon"}
+                </Text>
+              )}
+            </View>
+            <View style={styles.artCaption}>
+              <Text style={styles.artName} maxFontSizeMultiplier={1.4}>
+                {artCard.canonName}
+              </Text>
+              <Text style={styles.artRole} maxFontSizeMultiplier={1.4}>
+                {artCard.role}
+              </Text>
+            </View>
+          </Pressable>
+        </Animated.View>
       ) : null}
-
-      <Pressable style={styles.primary} onPress={() => navigate({ screen: "wizard" })}>
-        <Text style={styles.primaryText}>New story</Text>
-      </Pressable>
-    </ScrollView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 64, gap: 18 },
-  shelfLink: { alignSelf: "flex-start" },
-  shelfLinkText: { fontSize: 15, fontWeight: "700", color: "#4a3f8c" },
-  title: { fontSize: 28, fontWeight: "700", color: "#1a1a2e" },
-  meta: { fontSize: 14, color: "#666", textTransform: "capitalize" },
-  error: { fontSize: 14, color: "#a13333" },
-  page: {
-    gap: 10,
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: "#faf9fd",
-    borderWidth: 1,
-    borderColor: "#eee",
-  },
-  spineBeat: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#4a3f8c",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  beatText: { fontSize: 16, color: "#222", lineHeight: 23 },
-  cardRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 4 },
-  card: { width: 92, gap: 4, alignItems: "center" },
-  swatch: {
-    width: 92,
-    height: 110,
-    borderRadius: 10,
-    backgroundColor: "#e8e6f4",
-    borderWidth: 1,
-    borderColor: "#d5cff0",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 6,
-  },
-  swatchLabel: { fontSize: 11, color: "#555", textAlign: "center" },
-  cardName: { fontSize: 13, fontWeight: "600", color: "#222" },
-  cardRole: { fontSize: 12, color: "#777", textTransform: "capitalize" },
-  verse: { fontSize: 15, fontStyle: "italic", color: "#4a3f8c", textAlign: "center" },
-  primary: {
-    marginTop: 8,
-    backgroundColor: "#4a3f8c",
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  primaryText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-});
+/** All values from the theme (palette + type scale) — the tripwire test keeps it so. */
+function makeStyles({ colors, type }: Theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.bg },
+    lampWash: {
+      position: "absolute",
+      top: -180,
+      alignSelf: "center",
+      width: 440,
+      height: 340,
+      borderRadius: 999,
+      backgroundColor: colors.accent,
+      opacity: 0.08,
+    },
+    // Portrait-first; capped content width keeps tablets bookish.
+    column: {
+      flex: 1,
+      width: "100%",
+      maxWidth: 520,
+      alignSelf: "center",
+      paddingTop: 44,
+      paddingBottom: 16,
+    },
+    topbar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      paddingBottom: 4,
+    },
+    backLink: { minHeight: 44, justifyContent: "center", paddingRight: 12 },
+    backLinkText: { ...type.backLink, color: colors.ink2 },
+    worldName: { ...type.worldName, color: colors.ink2 },
+    pageCount: { ...type.pageCount, color: colors.ink2 },
+    vignette: { alignItems: "center", paddingTop: 2 },
+    titleBlock: { alignItems: "center", paddingHorizontal: 24, paddingTop: 4, paddingBottom: 10 },
+    arcTitle: { ...type.display, color: colors.ink, textAlign: "center", textTransform: "capitalize" },
+    spineStage: { ...type.spineStage, color: colors.ink2, marginTop: 6, textAlign: "center" },
+    // Warm, parent-facing — no dev-speak, no harsh red (§7): ink on surface.
+    error: {
+      ...type.entityName,
+      color: colors.ink,
+      backgroundColor: colors.surface,
+      borderColor: colors.line,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginHorizontal: 16,
+      marginBottom: 8,
+      textAlign: "center",
+    },
+    // The story card: radius 14, side margins 16, padding 14/20/12, hairline border.
+    pageCard: {
+      flex: 1,
+      marginHorizontal: 16,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.line,
+      borderRadius: 14,
+      paddingTop: 14,
+      paddingHorizontal: 20,
+      paddingBottom: 12,
+      shadowColor: colors.ink, // soft ink-tinted shadow
+      shadowOpacity: 0.1,
+      shadowRadius: 13,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 3,
+    },
+    cardsRow: { flexDirection: "row", gap: 12, marginBottom: 14 },
+    tile: { flex: 1, minWidth: 0 },
+    // Slight counter-rotations for a hand-placed feel.
+    tiltLeft: { transform: [{ rotate: "-0.7deg" }] },
+    tiltRight: { transform: [{ rotate: "0.5deg" }] },
+    tileArt: {
+      aspectRatio: 2,
+      borderWidth: 1,
+      borderColor: colors.line,
+      borderRadius: 8,
+      overflow: "hidden",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.bg,
+    },
+    tileImage: { width: "100%", height: "100%" },
+    tilePlaceholderText: { ...type.entityRole, color: colors.ink2, textAlign: "center", padding: 4 },
+    tileName: { ...type.entityName, color: colors.ink, textAlign: "center", marginTop: 7 },
+    tileRole: { ...type.entityRole, color: colors.ink2, textAlign: "center", marginTop: 1 },
+    proseScroll: { flex: 1 },
+    proseContent: { paddingBottom: 6 },
+    prose: { ...type.body, color: colors.ink },
+    proseGap: { marginTop: 12 },
+    // Raised cap, not a floated 3.3em drop cap (RN Text cannot float);
+    // display face on accent — large-text size, so the 3:1 exemption holds.
+    dropCap: { ...type.display, fontSize: 30, lineHeight: 34, color: colors.accent },
+    verse: { ...type.body, color: colors.ink2, fontStyle: "italic", textAlign: "center", marginTop: 16 },
+    pager: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+    // Pills, ≥44pt touch targets.
+    btn: { minHeight: 44, borderRadius: 999, paddingHorizontal: 18, alignItems: "center", justifyContent: "center" },
+    btnGhost: { borderWidth: 1.5, borderColor: colors.accent, backgroundColor: "transparent" },
+    btnDisabled: { opacity: 0.4 },
+    btnGhostText: { ...type.button, color: colors.ink2 },
+    btnSolid: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: colors.accent },
+    btnSolidText: { ...type.button, color: colors.accentInk },
+    dots: { flexDirection: "row", alignItems: "center", gap: 5 },
+    dot: { width: 6, height: 6, borderRadius: 999, backgroundColor: colors.line },
+    dotRead: { backgroundColor: colors.ink2, opacity: 0.55 },
+    dotActive: { backgroundColor: colors.accent, width: 18 },
+    artOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: colors.bg,
+      zIndex: 10,
+    },
+    artScrim: {
+      flex: 1,
+      alignItems: "center",
+      gap: 16,
+      paddingTop: 64,
+      paddingHorizontal: 20,
+      paddingBottom: 60,
+    },
+    artClose: {
+      position: "absolute",
+      top: 12,
+      right: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      borderWidth: 1.5,
+      borderColor: colors.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 11,
+    },
+    artCloseGlyph: { ...type.button, fontSize: 17, color: colors.ink2 },
+    artPlate: {
+      alignSelf: "stretch",
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.line,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    artImage: { width: "100%", height: "100%" },
+    artCaption: { alignItems: "center" },
+    artName: { ...type.entityNameArt, color: colors.ink, textAlign: "center" },
+    artRole: { ...type.entityRoleArt, color: colors.ink2, marginTop: 3 },
+  });
+}
