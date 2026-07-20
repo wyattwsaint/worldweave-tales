@@ -159,13 +159,15 @@ describe("Library header", () => {
 });
 
 describe("Library ground + lamp wash", () => {
-  it("day: the screen ground is the day bg", async () => {
+  it("day: the screen's ROOT container carries the day bg ground", async () => {
     await seedShelf();
     const root = await mountShelf("day");
-    const grounds = root.root.findAll(
-      (n) => isHost(n.type, "rn-view") && flat(n.props.style).backgroundColor === palettes.day.bg,
-    );
-    expect(grounds.length).toBeGreaterThanOrEqual(1);
+    // The outermost host view IS the screen ground — cover plates using bg
+    // elsewhere must not be able to satisfy this.
+    const screenRoot = root.root.findAll((n) => isHost(n.type, "rn-view"))[0];
+    const s = flat(screenRoot.props.style);
+    expect(s.flex).toBe(1);
+    expect(s.backgroundColor).toBe(palettes.day.bg);
   });
 
   it("a decorative accent lamp wash glows from the top (no touches, whisper opacity)", async () => {
@@ -198,11 +200,14 @@ describe("Library shelf cards", () => {
     }
   });
 
-  it("story cards are labelled buttons with >=44pt targets", async () => {
+  it("story cards are labelled buttons with >=44pt targets that voice name AND kept-since date", async () => {
     await seedShelf();
     const root = await mountShelf();
-    for (const name of ["Brackenford", "Willowmere"]) {
-      const hits = byA11yLabel(root, `Open ${name}`);
+    for (const [name, kept] of [
+      ["Brackenford", "July 15, 2026"],
+      ["Willowmere", "July 1, 2026"],
+    ] as const) {
+      const hits = byA11yLabel(root, `Open ${name}, kept since ${kept}`);
       expect(hits).toHaveLength(1);
       expect(hits[0].props.accessibilityRole).toBe("button");
       expect(flat(hits[0].props.style).minHeight as number).toBeGreaterThanOrEqual(44);
@@ -339,14 +344,30 @@ describe("Library palettes — day and night, tokens only", () => {
 });
 
 describe("Library dynamic type", () => {
-  it("every text bounds its font scaling (maxFontSizeMultiplier)", async () => {
-    await seedShelf();
-    const root = await mountShelf();
+  /**
+   * Every rn-text must bound its scaling: a numeric cap for reading copy, or
+   * scaling disabled outright (allowFontScaling={false}) for positioned art
+   * that would blow out of a fixed-footprint plate at a11y sizes.
+   */
+  function expectEveryTextBounded(root: ReactTestRenderer) {
     const texts = root.root.findAll((n) => isHost(n.type, "rn-text"));
     expect(texts.length).toBeGreaterThan(0);
     for (const t of texts) {
+      if (t.props.allowFontScaling === false) continue;
       expect(typeof t.props.maxFontSizeMultiplier).toBe("number");
       expect(t.props.maxFontSizeMultiplier as number).toBeLessThanOrEqual(1.6);
     }
+  }
+
+  it("every text bounds its font scaling (maxFontSizeMultiplier)", async () => {
+    await seedShelf();
+    const root = await mountShelf();
+    expectEveryTextBounded(root);
+  });
+
+  it("the EMPTY shelf bounds its font scaling too — vignette star art included", async () => {
+    const root = await mountShelf(); // nothing seeded: the vignette renders
+    expect(root.root.findAllByType(StorytimeVignette)).toHaveLength(1);
+    expectEveryTextBounded(root);
   });
 });

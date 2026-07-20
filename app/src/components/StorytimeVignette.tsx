@@ -23,9 +23,11 @@ export default function StorytimeVignette() {
       importantForAccessibility="no-hide-descendants"
     >
       <View style={[styles.glow, { backgroundColor: colors.accent }]} />
-      <Text style={[styles.star, styles.starLow, { color: colors.accent }]}>✦</Text>
-      <Text style={[styles.star, styles.starMid, { color: colors.accent }]}>✦</Text>
-      <Text style={[styles.star, styles.starHigh, { color: colors.accent }]}>✦</Text>
+      {/* Positioned art, not reading copy: never scales with a11y font sizes,
+          or the stars blow out of the fixed 141×96 plate. */}
+      <Text allowFontScaling={false} style={[styles.star, styles.starLow, { color: colors.accent }]}>✦</Text>
+      <Text allowFontScaling={false} style={[styles.star, styles.starMid, { color: colors.accent }]}>✦</Text>
+      <Text allowFontScaling={false} style={[styles.star, styles.starHigh, { color: colors.accent }]}>✦</Text>
       <View style={styles.book}>
         <View style={[styles.page, styles.pageLeft, { borderColor: colors.ink }]} />
         <View style={[styles.pageSpine, { backgroundColor: colors.ink }]} />

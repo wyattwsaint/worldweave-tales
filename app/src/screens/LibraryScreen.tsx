@@ -27,6 +27,33 @@ import StorytimeVignette from "../components/StorytimeVignette";
  * only. All color/type comes from the theme — no hardcoded values (the
  * one-token-system tripwire enforces it).
  */
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * "2026-07-15T…" → "July 15, 2026" — warm parent-facing copy, never raw ISO
+ * (§7). Slices the ISO fields directly: no date lib, and no Date.parse
+ * timezone drift shifting the kept-since day.
+ */
+function formatKeptSince(createdAt: string): string {
+  const year = createdAt.slice(0, 4);
+  const month = Number(createdAt.slice(5, 7));
+  const day = Number(createdAt.slice(8, 10));
+  return `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
+}
+
 export default function LibraryScreen() {
   const { navigate } = useNav();
   const theme = useTheme();
@@ -98,11 +125,13 @@ export default function LibraryScreen() {
           const source = artImageSource(world.coverRef ?? "", blobFs);
           // Alternating counter-rotations down the shelf — the hand-placed feel.
           const tilt = i % 2 === 0 ? styles.tiltLeft : styles.tiltRight;
+          const keptSince = formatKeptSince(world.createdAt);
           return (
             <Pressable
               key={world.id}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${world.name}`}
+              // Voices everything the card shows: the name AND the kept-since date.
+              accessibilityLabel={`Open ${world.name}, kept since ${keptSince}`}
               style={styles.storyCard}
               onPress={() => void openWorld(world.id)}
             >
@@ -116,7 +145,7 @@ export default function LibraryScreen() {
                 {world.name}
               </Text>
               <Text style={styles.storyDate} maxFontSizeMultiplier={1.4}>
-                {world.createdAt.slice(0, 10)}
+                {`Kept since ${keptSince}`}
               </Text>
             </Pressable>
           );
