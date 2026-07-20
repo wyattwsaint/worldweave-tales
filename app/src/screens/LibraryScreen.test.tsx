@@ -122,9 +122,9 @@ describe("LibraryScreen — the home bookshelf", () => {
     expect(text).toContain("Brackenford");
     // Newest first.
     expect(text.indexOf("Brackenford")).toBeLessThan(text.indexOf("Willowmere"));
-    // Created dates.
-    expect(text).toContain("2026-07-15");
-    expect(text).toContain("2026-07-01");
+    // Created dates, formatted warmly — never raw ISO on the shelf.
+    expect(text).toContain("Kept since July 15, 2026");
+    expect(text).toContain("Kept since July 1, 2026");
     // Willowmere's cover (the summary's coverRef, indexed at save time from
     // deck[0].lockedImageRef) resolves through the blob store; the deckless
     // world degrades to a neutral placeholder (no image).
@@ -267,6 +267,6 @@ describe("LibraryScreen — the home bookshelf", () => {
     const text = allText(root.root);
     expect(text).toContain("Your Bookshelf");
     expect(text).not.toContain("Your Tale");
-    expect(text).toContain("2026-07-18"); // the world is still shelved (reloaded on remount)
+    expect(text).toContain("Kept since July 18, 2026"); // the world is still shelved (reloaded on remount)
   });
 });

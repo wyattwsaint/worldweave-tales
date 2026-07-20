@@ -84,7 +84,7 @@ describe("WizardScreen (generic graph renderer)", () => {
   it("(b) switching the tier to epic reveals epic-only nodes", async () => {
     const root = await mountWizard();
     act(() => {
-      pressableByLabel(root, "epic").props.onPress();
+      pressableByLabel(root, "Epic").props.onPress();
     });
     const text = allText(root.root);
     expect(text).toContain("Directness"); // epic-only dial
@@ -114,7 +114,7 @@ describe("WizardScreen (generic graph renderer)", () => {
     const root = await mountWizard(fake);
     // Move to Solid (offers the free-text teaching box), then fill the situation.
     await act(async () => {
-      pressableByLabel(root, "solid").props.onPress();
+      pressableByLabel(root, "Solid").props.onPress();
     });
     await act(async () => {
       const situation = queryTextInput(root, "situation");
