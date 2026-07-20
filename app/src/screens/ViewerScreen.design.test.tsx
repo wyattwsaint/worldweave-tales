@@ -9,7 +9,7 @@ import {
 import { NavProvider, useNav, type NavState, type ViewerParams } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
-import { PRESSED_OPACITY } from "../theme/pressed";
+import { expectPressedFeedback, flat } from "../../test/pressedFeedback";
 import ViewerScreen from "./ViewerScreen";
 import StorytimeVignette from "../components/StorytimeVignette";
 import { setBlobFs } from "../storage/store";
@@ -71,23 +71,6 @@ function pressableByLabel(root: ReactTestRenderer, label: string): Node | undefi
 
 function byA11yLabel(root: ReactTestRenderer, label: string): Node[] {
   return root.root.findAll((n) => n.props?.accessibilityLabel === label);
-}
-
-/** Flattened RN style (style-functions resolved at rest, arrays merged left-to-right, falsy dropped). */
-function flat(style: unknown): Record<string, unknown> {
-  if (!style) return {};
-  if (typeof style === "function") return flat(style({ pressed: false }));
-  if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
-  return style as Record<string, unknown>;
-}
-
-/** Asserts the §5 pressed treatment: a style-function dimming to PRESSED_OPACITY under the finger. */
-function expectPressedFeedback(node: Node | undefined) {
-  expect(node).toBeTruthy();
-  const style = node!.props.style;
-  expect(typeof style).toBe("function");
-  expect(flat(style({ pressed: true })).opacity).toBe(PRESSED_OPACITY);
-  expect(flat(style({ pressed: false })).opacity).not.toBe(PRESSED_OPACITY);
 }
 
 /**

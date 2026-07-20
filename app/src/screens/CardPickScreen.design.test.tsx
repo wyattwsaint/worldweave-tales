@@ -5,7 +5,7 @@ import type { Arc, GenerateArcResponse, StoryBible, WizardAnswers } from "@wwt/d
 import { NavProvider, useNav, type CardPickParams, type NavState } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
-import { PRESSED_OPACITY } from "../theme/pressed";
+import { expectPressedFeedback, flat } from "../../test/pressedFeedback";
 import CardPickScreen from "./CardPickScreen";
 import { setBlobFs } from "../storage/store";
 import type { BlobFs } from "../storage/blobStore";
@@ -77,23 +77,6 @@ function allLabels(root: ReactTestRenderer): string[] {
   return root.root
     .findAll((n) => typeof n.props?.accessibilityLabel === "string")
     .map((n) => n.props.accessibilityLabel as string);
-}
-
-/** Flattened RN style (style-functions resolved at rest, arrays merged left-to-right, falsy dropped). */
-function flat(style: unknown): Record<string, unknown> {
-  if (!style) return {};
-  if (typeof style === "function") return flat(style({ pressed: false }));
-  if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
-  return style as Record<string, unknown>;
-}
-
-/** Asserts the §5 pressed treatment: a style-function dimming to PRESSED_OPACITY under the finger. */
-function expectPressedFeedback(node: Node | undefined) {
-  expect(node).toBeTruthy();
-  const style = node!.props.style;
-  expect(typeof style).toBe("function");
-  expect(flat(style({ pressed: true })).opacity).toBe(PRESSED_OPACITY);
-  expect(flat(style({ pressed: false })).opacity).not.toBe(PRESSED_OPACITY);
 }
 
 /** The 2:1 art plates — the visual body of every variant look tile. */

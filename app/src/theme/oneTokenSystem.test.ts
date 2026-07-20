@@ -19,6 +19,12 @@ const LEGACY = new Set<string>([]);
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRS = ["screens", "components"];
+/**
+ * App.tsx lives ABOVE src/ (the Expo entry), so no scanned dir reaches it —
+ * but it carries a StyleSheet (the themed nav shell) and must obey the same
+ * one-token rule. Listed explicitly; a missing file fails loudly (ENOENT).
+ */
+const EXTRA_FILES = [join(SRC, "..", "App.tsx")];
 
 /**
  * #RGB / #RGBA / #RRGGBB / #RRGGBBAA hex literals (not e.g. `stub-image:hero#0`)
@@ -43,7 +49,7 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const files = SCANNED_DIRS.flatMap((d) => sourceFiles(join(SRC, d))).filter(
+const files = [...SCANNED_DIRS.flatMap((d) => sourceFiles(join(SRC, d))), ...EXTRA_FILES].filter(
   (f) => !LEGACY.has(f.split(/[\\/]/).pop()!),
 );
 
@@ -54,6 +60,7 @@ describe("one token system (screens/components carry no raw styles)", () => {
     expect(names).toContain("CardPickScreen.tsx");
     expect(names).toContain("LibraryScreen.tsx");
     expect(names).toContain("WizardScreen.tsx");
+    expect(names).toContain("App.tsx");
   });
 
   for (const file of files) {
