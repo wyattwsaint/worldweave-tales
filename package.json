@@ -10,6 +10,7 @@
     "app"
   ],
   "scripts": {
+    "art:build": "node scripts/build-art.mjs",
     "build:domain": "npm run build -w @wwt/domain",
     "dev:proxy": "npm run dev -w @wwt/proxy",
     "dev:app": "npm run start -w @wwt/app",
@@ -17,6 +18,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
   },
   "overrides": {
     "react-native": "0.81.5"

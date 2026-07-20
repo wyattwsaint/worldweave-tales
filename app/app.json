@@ -7,18 +7,35 @@
     "scheme": "worldweave",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.worldweavetales.app"
     },
     "android": {
-      "package": "com.worldweavetales.app"
+      "package": "com.worldweavetales.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#131A31"
+      }
     },
     "extra": {
       "proxyBaseUrl": "http://localhost:8787"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/adaptive-icon.png",
+          "backgroundColor": "#F3E8D2",
+          "imageWidth": 288,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#131A31"
+          }
+        }
+      ]
     ]
   }
 }
