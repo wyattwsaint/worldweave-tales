@@ -113,8 +113,9 @@ Contrast ratios computed against the stated ground:
 - `surface` `#FBF4E4` / `#1B2340`
 - `ink` `#3E3325` / `#E7DCC3` — 11.2 / 11.3 vs surface
 - `ink2` `#6C5C46` / `#A89D83` — 5.9 / 5.7 vs surface
-- `accent` `#A16207` **both modes** — 4.5 / 3.1 vs surface —
-  **LARGE TEXT / UI ONLY, never body-size text** (night is below 4.5:1)
+- `accent` `#A16207` **both modes** — 4.49 / 3.1 vs surface —
+  **LARGE TEXT / UI ONLY, never body-size text** (both modes are below the
+  4.5:1 body threshold; they pass only the 3:1 large-text/UI bar)
 - `accent-ink` `#FFFBEF` — 4.8 vs accent
 - `line` `#DACBAB` / `#2E3A5C` — decorative, exempt
 

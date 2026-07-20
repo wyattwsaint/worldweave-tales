@@ -3,12 +3,12 @@
  *
  * Direction: `docs/design/ui-direction.md` (locked 2026-07-19). Hexes are the
  * AA-verified values from the prototype session; the contract tests
- * (`tokens.contract.test.ts`) enforce the invariants (identical key sets across
- * modes, WCAG AA for every text/ground pair) rather than pinning each hex —
- * tune values only if the contract still holds.
+ * (`tokens.contract.test.ts`) pin them exactly AND enforce the invariants
+ * (identical key sets across modes, WCAG AA for every text/ground pair) —
+ * retuning starts with the ui-direction.md appendix, then the pin.
  *
  * Both palettes are first-class from day one; components never hardcode either
- * (a ThemeContext resolves day/night via the system scheme in a later slice).
+ * (ThemeContext resolves day/night via the system scheme).
  */
 
 // Type-only: erased at compile, so this module stays runnable in plain node

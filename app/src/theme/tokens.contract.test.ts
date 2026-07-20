@@ -10,9 +10,9 @@ import {
 /**
  * Tokens contract tests (ui-direction.md §8.1, red-first, pure TS).
  *
- * The palettes' hexes were locked in the 2026-07-19 prototype session; these
- * tests don't pin every hex — they enforce the *invariants* those hexes must
- * keep satisfying if anyone tunes them:
+ * The palettes' hexes were locked in the 2026-07-19 prototype session. The
+ * final describe pins them exactly (the appendix is the source of truth); the
+ * rest enforce the *invariants* any future retune must keep satisfying:
  *
  * - both modes expose an identical token key set;
  * - WCAG AA computed programmatically for every text/ground pair in both modes;
@@ -175,5 +175,32 @@ describe("type scale (ui-direction.md appendix, prototype-confirmed)", () => {
     expect(typography.entityRole.letterSpacing).toBeCloseTo(11.5 * 0.05, 5);
     expect(typography.entityRoleArt.fontFamily).toBe("AlegreyaSC_500Medium");
     expect(typography.entityRoleArt.fontSize).toBe(14);
+  });
+});
+
+describe("locked hexes (ui-direction.md appendix, user-approved 2026-07-19)", () => {
+  // The AA invariants above are necessary but not sufficient: #000 ink on
+  // #FFF bg would satisfy every ratio while breaking the design ("warm
+  // near-black, never #000" / "paper, not white"). The approved values are
+  // locked — retuning means updating the appendix first, then this pin.
+  it("palettes match the appendix exactly", () => {
+    expect(palettes.day).toEqual({
+      bg: "#F3E8D2",
+      surface: "#FBF4E4",
+      ink: "#3E3325",
+      ink2: "#6C5C46",
+      accent: "#A16207",
+      accentInk: "#FFFBEF",
+      line: "#DACBAB",
+    });
+    expect(palettes.night).toEqual({
+      bg: "#131A31",
+      surface: "#1B2340",
+      ink: "#E7DCC3",
+      ink2: "#A89D83",
+      accent: "#A16207",
+      accentInk: "#FFFBEF",
+      line: "#2E3A5C",
+    });
   });
 });
