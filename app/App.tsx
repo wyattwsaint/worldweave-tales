@@ -1,5 +1,6 @@
 import { StatusBar } from "expo-status-bar";
-import { ThemeProvider } from "./src/theme/ThemeContext";
+import { StyleSheet, View } from "react-native";
+import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
 import { NavProvider, useNav } from "./src/nav/NavContext";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import WizardScreen from "./src/screens/WizardScreen";
@@ -17,14 +18,29 @@ import type { ProxyClientLike } from "./src/api/proxyClient";
  */
 export default function App({ client }: { client?: ProxyClientLike } = {}) {
   return (
-    // Theme resolves day/night from the system scheme (ui-direction.md §4);
-    // "auto" keeps the status bar text legible against either palette.
+    // Theme resolves day/night from the system scheme (ui-direction.md §4).
     <ThemeProvider>
       <NavProvider>
-        <CurrentScreen client={client} />
-        <StatusBar style="auto" />
+        <Shell client={client} />
       </NavProvider>
     </ThemeProvider>
+  );
+}
+
+/**
+ * Themed nav shell (§6 final sweep): the container behind whichever screen the
+ * navigator shows carries the theme's ground, so a screen swap never flashes
+ * an unthemed frame; and the status bar follows the THEME — dark ink glyphs
+ * over day parchment, light lamplight glyphs over the night sky — rather than
+ * being left to the raw system default.
+ */
+function Shell({ client }: { client?: ProxyClientLike }) {
+  const { mode, colors } = useTheme();
+  return (
+    <View style={[styles.shell, { backgroundColor: colors.bg }]}>
+      <CurrentScreen client={client} />
+      <StatusBar style={mode === "night" ? "light" : "dark"} />
+    </View>
   );
 }
 
@@ -41,3 +57,7 @@ function CurrentScreen({ client }: { client?: ProxyClientLike }) {
       return <ViewerScreen params={state.params} />;
   }
 }
+
+const styles = StyleSheet.create({
+  shell: { flex: 1 },
+});

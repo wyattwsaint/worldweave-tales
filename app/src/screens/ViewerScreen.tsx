@@ -15,6 +15,7 @@ import { artDownloader, blobFs, store, whenStoreReady } from "../storage/store";
 import { arcTitle, persistFinishedWorld } from "../storage/persistence";
 import { artImageSource } from "../storage/artSource";
 import { useTheme, type Theme } from "../theme/ThemeContext";
+import { pressedStyle } from "../theme/pressed";
 import StorytimeVignette from "../components/StorytimeVignette";
 
 /**
@@ -175,7 +176,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back to the Shelf"
-            style={styles.backLink}
+            style={pressedStyle(styles.backLink)}
             onPress={() => void backToShelf()}
           >
             <Text style={styles.backLinkText} maxFontSizeMultiplier={1.4}>
@@ -205,7 +206,10 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             {arcTitle(arc)}
           </Text>
           <Text style={styles.spineStage} maxFontSizeMultiplier={1.4}>
-            {`Page ${pageWord(page + 1)} · ${humanizeSpine(beat?.spineBeat ?? "")}`}
+            {/* No dangling separator when an empty arc leaves no stage to name. */}
+            {beat
+              ? `Page ${pageWord(page + 1)} · ${humanizeSpine(beat.spineBeat)}`
+              : `Page ${pageWord(page + 1)}`}
           </Text>
         </View>
 
@@ -227,7 +231,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
                     key={card.entityId}
                     accessibilityRole="button"
                     accessibilityLabel={`Open art for ${card.canonName}`}
-                    style={styles.tile}
+                    style={pressedStyle(styles.tile)}
                     onPress={() => setArtCard(card)}
                   >
                     <View style={[styles.tileArt, tilt]}>
@@ -257,6 +261,12 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
           ) : null}
 
           <ScrollView style={styles.proseScroll} contentContainerStyle={styles.proseContent}>
+            {paragraphs.length === 0 ? (
+              // An arc with no pages degrades warmly — never a blank card.
+              <Text style={styles.restingPage} maxFontSizeMultiplier={1.6}>
+                This tale's pages are still blank — head back to the Shelf and weave a new story.
+              </Text>
+            ) : null}
             {paragraphs.map((p, i) => (
               <Text
                 key={i}
@@ -287,7 +297,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             accessibilityLabel="Previous page"
             accessibilityState={{ disabled: page === 0 }}
             disabled={page === 0}
-            style={[styles.btn, styles.btnGhost, page === 0 && styles.btnDisabled]}
+            style={pressedStyle(styles.btn, styles.btnGhost, page === 0 && styles.btnDisabled)}
             onPress={() => setPage((p) => Math.max(0, p - 1))}
           >
             <Text style={styles.btnGhostText} maxFontSizeMultiplier={1.4}>
@@ -308,7 +318,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="New story"
-              style={[styles.btn, styles.btnSolid]}
+              style={pressedStyle(styles.btn, styles.btnSolid)}
               onPress={() => navigate({ screen: "wizard" })}
             >
               <Text style={styles.btnSolidText} maxFontSizeMultiplier={1.4}>
@@ -319,7 +329,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Next page"
-              style={[styles.btn, styles.btnSolid]}
+              style={pressedStyle(styles.btn, styles.btnSolid)}
               onPress={() => setPage((p) => Math.min(total - 1, p + 1))}
             >
               <Text style={styles.btnSolidText} maxFontSizeMultiplier={1.4}>
@@ -343,12 +353,13 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
             },
           ]}
         >
-          {/* Tap anywhere dismisses; the ✕ is the labelled close affordance. */}
+          {/* Tap anywhere dismisses; the ✕ is the labelled close affordance.
+              The scrim is a surface, not a control — no pressed feedback. */}
           <Pressable accessible={false} style={styles.artScrim} onPress={() => setArtCard(null)}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close entity art"
-              style={styles.artClose}
+              style={pressedStyle(styles.artClose)}
               onPress={() => setArtCard(null)}
             >
               <Text style={styles.artCloseGlyph} maxFontSizeMultiplier={1.4}>
@@ -481,6 +492,8 @@ function makeStyles({ colors, type }: Theme) {
     // floated 3.3em drop cap; size/face live in the token (large-text, 3:1).
     dropCap: { ...type.dropCap, color: colors.accent },
     verse: { ...type.body, color: colors.ink2, fontStyle: "italic", textAlign: "center", marginTop: 16 },
+    // The warm empty-pages line: read-aloud voice in the supporting ink.
+    restingPage: { ...type.body, color: colors.ink2, fontStyle: "italic", textAlign: "center", marginTop: 8 },
     pager: {
       flexDirection: "row",
       alignItems: "center",

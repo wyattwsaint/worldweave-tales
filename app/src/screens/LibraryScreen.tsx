@@ -5,6 +5,7 @@ import { useNav } from "../nav/NavContext";
 import { blobFs, store, whenStoreReady } from "../storage/store";
 import { artImageSource } from "../storage/artSource";
 import { useTheme, type Theme } from "../theme/ThemeContext";
+import { pressedStyle } from "../theme/pressed";
 import StorytimeVignette from "../components/StorytimeVignette";
 
 /**
@@ -111,6 +112,16 @@ export default function LibraryScreen() {
           </Text>
         ) : null}
 
+        {worlds === null && !error ? (
+          // Loading: a quiet skeleton story card holds the shelf's shape —
+          // static lines only (the #9 pass owns any shimmer loop).
+          <View accessible accessibilityLabel="Loading your bookshelf" style={styles.loadingCard}>
+            <View style={styles.skeletonPlate} />
+            <View style={styles.skeletonLine} />
+            <View style={[styles.skeletonLine, styles.skeletonLineShort]} />
+          </View>
+        ) : null}
+
         {worlds?.length === 0 ? (
           // Empty state per §1/§5: a composition of motif art + warm copy, not a component.
           <View style={styles.emptyState}>
@@ -132,7 +143,7 @@ export default function LibraryScreen() {
               accessibilityRole="button"
               // Voices everything the card shows: the name AND the kept-since date.
               accessibilityLabel={`Open ${world.name}, kept since ${keptSince}`}
-              style={styles.storyCard}
+              style={pressedStyle(styles.storyCard)}
               onPress={() => void openWorld(world.id)}
             >
               <View style={[styles.coverArt, tilt]}>
@@ -154,7 +165,7 @@ export default function LibraryScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="New Story"
-          style={styles.primary}
+          style={pressedStyle(styles.primary)}
           onPress={() => navigate({ screen: "wizard" })}
         >
           <Text style={styles.primaryText} maxFontSizeMultiplier={1.4}>
@@ -206,6 +217,26 @@ function makeStyles({ colors, type }: Theme) {
       textAlign: "center",
     },
     emptyState: { alignItems: "center", gap: 14, paddingTop: 18 },
+    // Loading skeleton: the story-card chrome holding quiet page lines.
+    loadingCard: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.line,
+      borderRadius: 14,
+      paddingTop: 14,
+      paddingHorizontal: 20,
+      paddingBottom: 16,
+      gap: 10,
+    },
+    skeletonPlate: {
+      aspectRatio: 2,
+      borderRadius: 8,
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.line,
+    },
+    skeletonLine: { height: 12, borderRadius: 6, backgroundColor: colors.line, opacity: 0.7 },
+    skeletonLineShort: { width: "62%" },
     emptyText: { ...type.body, color: colors.ink, textAlign: "center", paddingHorizontal: 24 },
     // One surface card per story: radius 14, hairline border, soft ink shadow.
     storyCard: {

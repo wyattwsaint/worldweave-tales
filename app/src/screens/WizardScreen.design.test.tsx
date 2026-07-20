@@ -5,6 +5,7 @@ import type { GenerateArcRequest, GenerateArcResponse, WizardAnswers } from "@ww
 import { NavProvider, useNav, type NavState } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
+import { PRESSED_OPACITY } from "../theme/pressed";
 import { FakeProxyClient } from "../api/fakeProxyClient";
 import type { ProxyClientLike } from "../api/proxyClient";
 import WizardScreen from "./WizardScreen";
@@ -72,11 +73,21 @@ function allLabels(root: ReactTestRenderer): string[] {
     .map((n) => n.props.accessibilityLabel as string);
 }
 
-/** Flattened RN style (arrays merged left-to-right, falsy entries dropped). */
+/** Flattened RN style (style-functions resolved at rest, arrays merged left-to-right, falsy dropped). */
 function flat(style: unknown): Record<string, unknown> {
   if (!style) return {};
+  if (typeof style === "function") return flat(style({ pressed: false }));
   if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
   return style as Record<string, unknown>;
+}
+
+/** Asserts the §5 pressed treatment: a style-function dimming to PRESSED_OPACITY under the finger. */
+function expectPressedFeedback(node: Node | undefined) {
+  expect(node).toBeTruthy();
+  const style = node!.props.style;
+  expect(typeof style).toBe("function");
+  expect(flat(style({ pressed: true })).opacity).toBe(PRESSED_OPACITY);
+  expect(flat(style({ pressed: false })).opacity).not.toBe(PRESSED_OPACITY);
 }
 
 function textInputByTestID(root: ReactTestRenderer, testID: string): Node | undefined {
@@ -482,6 +493,27 @@ describe("Wizard §7 failure escape (error state ONLY)", () => {
 
     await press(escape);
     expect(navState?.screen).toBe("library");
+  });
+});
+
+describe("Wizard pressed states (§5 — Pressable style-function feedback)", () => {
+  it("chips, the closing-verse toggle and the primary pill all dim under the finger", async () => {
+    const root = await mountWizard();
+    const controls = root.root.findAll(
+      (n) =>
+        isHost(n.type, "rn-pressable") &&
+        (n.props.accessibilityRole === "button" || n.props.accessibilityRole === "switch"),
+    );
+    // Beginner form: tier chips + ageBand chips + virtue chips + toggle + Weave.
+    expect(controls.length).toBeGreaterThanOrEqual(8);
+    for (const c of controls) expectPressedFeedback(c);
+  });
+
+  it("the §7 error state's Try again and escape link give the same feedback", async () => {
+    const root = await mountWizard("day", new ScriptedClient(Infinity as unknown as number));
+    await press(pressableByLabel(root, "Weave the tale"));
+    expectPressedFeedback(pressableByLabel(root, "Try again"));
+    expectPressedFeedback(byA11yLabel(root, "Back to the Shelf")[0]);
   });
 });
 

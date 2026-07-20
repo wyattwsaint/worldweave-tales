@@ -14,6 +14,7 @@ import { ProxyClient, type ProxyClientLike } from "../api/proxyClient";
 import { PROXY_URL } from "../api/config";
 import { useNav } from "../nav/NavContext";
 import { useTheme, type Theme } from "../theme/ThemeContext";
+import { pressedStyle } from "../theme/pressed";
 
 /**
  * GENERIC, data-driven wizard — #5 build-order slice 5 (the final screen),
@@ -172,7 +173,11 @@ export default function WizardScreen({
                   The tale slipped away before it could be woven. Your choices are safe — let's try
                   again.
                 </Text>
-                <Pressable accessibilityRole="button" style={styles.primary} onPress={onSubmit}>
+                <Pressable
+                  accessibilityRole="button"
+                  style={pressedStyle(styles.primary)}
+                  onPress={onSubmit}
+                >
                   <Text style={styles.primaryText} maxFontSizeMultiplier={1.4}>
                     Try again
                   </Text>
@@ -180,7 +185,7 @@ export default function WizardScreen({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Back to the Shelf"
-                  style={styles.escape}
+                  style={pressedStyle(styles.escape)}
                   onPress={goHome}
                 >
                   <Text style={styles.escapeText} maxFontSizeMultiplier={1.4}>
@@ -193,7 +198,7 @@ export default function WizardScreen({
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !canSubmit }}
                 disabled={!canSubmit}
-                style={[styles.primary, !canSubmit && styles.primaryQuiet]}
+                style={pressedStyle(styles.primary, !canSubmit && styles.primaryQuiet)}
                 onPress={onSubmit}
               >
                 <Text
@@ -262,7 +267,7 @@ function NodeControl({
           accessibilityRole="switch"
           accessibilityLabel={label}
           accessibilityState={{ checked: on }}
-          style={[styles.chip, styles.toggle, on && styles.chipOn]}
+          style={pressedStyle(styles.chip, styles.toggle, on && styles.chipOn)}
           onPress={() => onChange(node.id, !on)}
         >
           <Text style={[styles.chipText, on && styles.chipTextOn]} maxFontSizeMultiplier={1.4}>
@@ -371,7 +376,7 @@ function ChipRow({
             key={opt}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
-            style={[styles.chip, on && styles.chipOn]}
+            style={pressedStyle(styles.chip, on && styles.chipOn)}
             onPress={() => onSelect(opt)}
           >
             {/* Humanized copy for eyes and ears; the raw id is what's stored. */}

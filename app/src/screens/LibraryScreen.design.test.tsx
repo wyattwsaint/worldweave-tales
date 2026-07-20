@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NavProvider, useNav, type NavState } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
+import { PRESSED_OPACITY } from "../theme/pressed";
 import LibraryScreen from "./LibraryScreen";
 import StorytimeVignette from "../components/StorytimeVignette";
 import { setBlobFs, store } from "../storage/store";
@@ -79,11 +80,21 @@ function allLabels(root: ReactTestRenderer): string[] {
     .map((n) => n.props.accessibilityLabel as string);
 }
 
-/** Flattened RN style (arrays merged left-to-right, falsy entries dropped). */
+/** Flattened RN style (style-functions resolved at rest, arrays merged left-to-right, falsy dropped). */
 function flat(style: unknown): Record<string, unknown> {
   if (!style) return {};
+  if (typeof style === "function") return flat(style({ pressed: false }));
   if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
   return style as Record<string, unknown>;
+}
+
+/** Asserts the §5 pressed treatment: a style-function dimming to PRESSED_OPACITY under the finger. */
+function expectPressedFeedback(node: Node | undefined) {
+  expect(node).toBeTruthy();
+  const style = node!.props.style;
+  expect(typeof style).toBe("function");
+  expect(flat(style({ pressed: true })).opacity).toBe(PRESSED_OPACITY);
+  expect(flat(style({ pressed: false })).opacity).not.toBe(PRESSED_OPACITY);
 }
 
 /** The 2:1 cover plates — the visual body of every shelved story card. */
@@ -301,6 +312,41 @@ describe("Library primary action", () => {
     );
     expect(accentPressables).toHaveLength(1);
     expect(allText(accentPressables[0])).toContain("New Story");
+  });
+});
+
+describe("Library pressed states (§5 — Pressable style-function feedback)", () => {
+  it("story cards and the ＋ New Story pill dim under the finger", async () => {
+    await seedShelf();
+    const root = await mountShelf();
+    const controls = root.root.findAll(
+      (n) => isHost(n.type, "rn-pressable") && n.props.accessibilityRole === "button",
+    );
+    expect(controls).toHaveLength(3); // two shelved stories + the CTA
+    for (const c of controls) expectPressedFeedback(c);
+  });
+});
+
+describe("Library loading — a quiet skeleton shelf, never a blank flash", () => {
+  it("while the shelf loads, a skeleton story card holds the space", async () => {
+    vi.spyOn(store, "listWorldSummaries").mockReturnValue(new Promise(() => {}));
+    const root = await mountShelf();
+    // A card in the story-card chrome (surface, hairline border, radius 14)…
+    const cards = root.root.findAll((n) => {
+      if (!isHost(n.type, "rn-view")) return false;
+      const s = flat(n.props.style);
+      return s.backgroundColor === palettes.day.surface && s.borderRadius === 14;
+    });
+    expect(cards.length).toBeGreaterThanOrEqual(1);
+    // …holding quiet skeleton lines in the hairline tone (static — #9 owns shimmer).
+    const bones = root.root.findAll((n) => {
+      if (!isHost(n.type, "rn-view")) return false;
+      const s = flat(n.props.style);
+      return s.backgroundColor === palettes.day.line && s.borderRadius === 6;
+    });
+    expect(bones.length).toBeGreaterThanOrEqual(2);
+    // Loading is not empty: the weave-your-first invitation waits for the loaded shelf.
+    expect(allText(root.root)).not.toContain("No tales on the shelf yet");
   });
 });
 

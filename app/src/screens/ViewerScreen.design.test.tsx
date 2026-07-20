@@ -9,6 +9,7 @@ import {
 import { NavProvider, useNav, type NavState, type ViewerParams } from "../nav/NavContext";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { palettes, typography, type ThemeMode } from "../theme/tokens";
+import { PRESSED_OPACITY } from "../theme/pressed";
 import ViewerScreen from "./ViewerScreen";
 import StorytimeVignette from "../components/StorytimeVignette";
 import { setBlobFs } from "../storage/store";
@@ -72,11 +73,21 @@ function byA11yLabel(root: ReactTestRenderer, label: string): Node[] {
   return root.root.findAll((n) => n.props?.accessibilityLabel === label);
 }
 
-/** Flattened RN style (arrays merged left-to-right, falsy entries dropped). */
+/** Flattened RN style (style-functions resolved at rest, arrays merged left-to-right, falsy dropped). */
 function flat(style: unknown): Record<string, unknown> {
   if (!style) return {};
+  if (typeof style === "function") return flat(style({ pressed: false }));
   if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
   return style as Record<string, unknown>;
+}
+
+/** Asserts the §5 pressed treatment: a style-function dimming to PRESSED_OPACITY under the finger. */
+function expectPressedFeedback(node: Node | undefined) {
+  expect(node).toBeTruthy();
+  const style = node!.props.style;
+  expect(typeof style).toBe("function");
+  expect(flat(style({ pressed: true })).opacity).toBe(PRESSED_OPACITY);
+  expect(flat(style({ pressed: false })).opacity).not.toBe(PRESSED_OPACITY);
 }
 
 /**
@@ -331,6 +342,76 @@ describe("Viewer palettes — day and night, tokens only", () => {
     for (const dayOnly of [palettes.day.bg, palettes.day.surface, palettes.day.ink, palettes.day.ink2, palettes.day.line]) {
       expect(values).not.toContain(dayOnly);
     }
+  });
+});
+
+describe("Viewer pressed states (§5 — Pressable style-function feedback)", () => {
+  it("every control dims under the finger: ‹ Shelf, art tiles, and the pager pair", async () => {
+    const root = await mountViewer();
+    const controls = root.root.findAll(
+      (n) => isHost(n.type, "rn-pressable") && n.props.accessibilityRole === "button",
+    );
+    // ‹ Shelf + at least one dealt tile + ‹ Back + Next page.
+    expect(controls.length).toBeGreaterThanOrEqual(4);
+    for (const c of controls) expectPressedFeedback(c);
+  });
+
+  it("the lightbox ✕ gives the same feedback; the tap-anywhere scrim is not a control", async () => {
+    const root = await mountViewer();
+    await press(byA11yLabel(root, "Open art for Pip")[0]);
+    expectPressedFeedback(byA11yLabel(root, "Close entity art")[0]);
+    const overlay = root.root.find((n) => isHost(n.type, "rn-animated-view"));
+    const scrims = overlay.findAll(
+      (n) => isHost(n.type, "rn-pressable") && n.props.accessibilityRole === undefined,
+    );
+    // The dismiss surface stays quiet — pressed feedback belongs to controls.
+    expect(scrims).toHaveLength(1);
+    expect(typeof scrims[0].props.style).not.toBe("function");
+  });
+});
+
+describe("Viewer empty pages — degrade warmly, never blank", () => {
+  async function mountEmpty(): Promise<ReactTestRenderer> {
+    const world = sampleWorld();
+    const params: ViewerParams = {
+      arc: { ...sampleArc(), beats: [] },
+      cards: world.deck,
+      bible: world.bible,
+      source: "library",
+    };
+    let root!: ReactTestRenderer;
+    await act(async () => {
+      root = TestRenderer.create(
+        <ThemeProvider mode="day">
+          <NavProvider>
+            <ViewerScreen params={params} />
+          </NavProvider>
+        </ThemeProvider>,
+      );
+    });
+    return root;
+  }
+
+  it("an arc with no pages shows a warm resting line on the page card", async () => {
+    const root = await mountEmpty();
+    const line = root.root.findAll(
+      (n) => isHost(n.type, "rn-text") && allText(n).includes("pages are still blank"),
+    )[0];
+    expect(line).toBeTruthy();
+    const s = flat(line.props.style);
+    expect(s.fontFamily).toBe(typography.body.fontFamily);
+    expect(s.color).toBe(palettes.day.ink2);
+  });
+
+  it("the spine line drops its dangling separator when there is no stage to name", async () => {
+    const root = await mountEmpty();
+    const spine = root.root.findAll(
+      (n) =>
+        isHost(n.type, "rn-text") &&
+        flat(n.props.style).fontSize === typography.spineStage.fontSize,
+    )[0];
+    expect(spine).toBeTruthy();
+    expect(allText(spine)).toBe("Page one");
   });
 });
 

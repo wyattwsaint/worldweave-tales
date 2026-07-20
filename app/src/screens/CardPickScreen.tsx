@@ -6,6 +6,7 @@ import { useNav, type CardPickParams } from "../nav/NavContext";
 import { artImageSource } from "../storage/artSource";
 import { blobFs } from "../storage/store";
 import { useTheme, type Theme } from "../theme/ThemeContext";
+import { pressedStyle } from "../theme/pressed";
 
 /**
  * Card-Pick screen — #5 build-order slice 3, styled to the locked direction
@@ -65,7 +66,11 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
           Pick the Art
         </Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>
-          Tap one look for each character. Locked in forever once you weave.
+          {choices.length > 0
+            ? "Tap one look for each character. Locked in forever once you weave."
+            : // Zero pending choices degrades warmly: every face in this tale is
+              // already canon, so there is nothing to pick — just weave on.
+              "This tale's cast is already drawn — nothing new to pick. Weave on."}
         </Text>
 
         {choices.map((choice) => (
@@ -92,7 +97,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
                       choice.variantImageRefs.length,
                     )} for the ${choice.role}`}
                     accessibilityState={{ selected: on }}
-                    style={styles.look}
+                    style={pressedStyle(styles.look)}
                     onPress={() => setPicks((p) => ({ ...p, [choice.role]: ref }))}
                   >
                     <View style={[styles.lookArt, tilt, on && styles.lookArtOn]}>
@@ -122,7 +127,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
           accessibilityRole="button"
           accessibilityState={{ disabled: !allPicked }}
           disabled={!allPicked}
-          style={[styles.primary, !allPicked && styles.primaryDisabled]}
+          style={pressedStyle(styles.primary, !allPicked && styles.primaryDisabled)}
           onPress={onConfirm}
         >
           <Text
