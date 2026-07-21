@@ -14,7 +14,9 @@ web-build/
 .env
 .env.*
 !.env.example
-# native
+# native — `expo prebuild` output is generated, never authored (see docs/design/art-brief.md)
+ios/
+android/
 *.orig.*
 *.jks
 *.p8

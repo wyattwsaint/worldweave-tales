@@ -159,6 +159,17 @@ low-opacity watermark behind content) rejected — the opaque story card leaves
 it no canvas, even at 32% amber-tinted opacity. The full scene still carries
 splash, empty states, and the #9 loading animation per §1.
 
+**Amended 2026-07-20 (#6) — the real art landed.** Brief and pipeline:
+`docs/design/art-brief.md`. Two corrections to the verdict above:
+
+- **Footprint is an A+B split.** The Viewer header takes a 141×96 band crop of
+  the scene (locked footprint unchanged); the empty Library takes the full
+  768×1024 portrait plate. Both derive from the same drawing.
+- **The scene no longer carries the splash.** Android 12+ masks the splash image
+  to a ~192dp circle, which a 3:4 plate cannot survive, so the splash is the
+  icon medallion over the token ground instead — day and night differ only by
+  that ground. The scene keeps the empty states and #9.
+
 ### Copy rule — "page"
 
 Reader-facing UI says **"page"**, never "beat": "Page four", "dealt this
