@@ -35,7 +35,8 @@
             "backgroundColor": "#131A31"
           }
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

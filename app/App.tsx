@@ -1,12 +1,21 @@
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { StyleSheet, View } from "react-native";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
+import { useAppFonts } from "./src/theme/fonts";
 import { NavProvider, useNav } from "./src/nav/NavContext";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import WizardScreen from "./src/screens/WizardScreen";
 import CardPickScreen from "./src/screens/CardPickScreen";
 import ViewerScreen from "./src/screens/ViewerScreen";
 import type { ProxyClientLike } from "./src/api/proxyClient";
+
+// Hold the native splash past the first frame: the brand faces load async, and
+// the one thing worse than a slightly longer splash is a frame of the story in
+// the system font. Released in Shell once the faces are in (or have failed).
+// Rejection is ignored on purpose — it only means the splash is already gone.
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /**
  * App root. Wraps the hand-rolled navigator and renders the current screen.
@@ -36,9 +45,18 @@ export default function App({ client }: { client?: ProxyClientLike } = {}) {
  */
 function Shell({ client }: { client?: ProxyClientLike }) {
   const { mode, colors } = useTheme();
+  const fontsReady = useAppFonts();
+
+  // Hand the splash off only when the app can paint in its own faces — see
+  // the module-scope hold above. The themed ground below is already mounted
+  // behind the splash, so the handoff is parchment-to-parchment.
+  useEffect(() => {
+    if (fontsReady) void SplashScreen.hideAsync();
+  }, [fontsReady]);
+
   return (
     <View style={[styles.shell, { backgroundColor: colors.bg }]}>
-      <CurrentScreen client={client} />
+      {fontsReady ? <CurrentScreen client={client} /> : null}
       <StatusBar style={mode === "night" ? "light" : "dark"} />
     </View>
   );

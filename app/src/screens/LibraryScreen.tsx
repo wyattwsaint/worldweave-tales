@@ -125,7 +125,7 @@ export default function LibraryScreen() {
         {worlds?.length === 0 ? (
           // Empty state per §1/§5: a composition of motif art + warm copy, not a component.
           <View style={styles.emptyState}>
-            <StorytimeVignette />
+            <StorytimeVignette variant="plate" />
             <Text style={styles.emptyText} maxFontSizeMultiplier={1.6}>
               No tales on the shelf yet — weave your first bedtime story.
             </Text>

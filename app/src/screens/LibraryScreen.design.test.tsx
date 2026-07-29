@@ -251,7 +251,11 @@ describe("Library shelf cards", () => {
 describe("Library empty shelf — storytime composition (§1/§5)", () => {
   it("no stories yet: the motif vignette plus a warm read-aloud invitation", async () => {
     const root = await mountShelf();
-    expect(root.root.findAllByType(StorytimeVignette)).toHaveLength(1);
+    const motif = root.root.findAllByType(StorytimeVignette);
+    expect(motif).toHaveLength(1);
+    // The empty shelf is the one surface with room for the whole drawing — the
+    // 141×96 header band belongs to the Viewer (ui-direction.md amendment).
+    expect(motif[0].props.variant).toBe("plate");
     const invite = root.root.find(
       (n) => isHost(n.type, "rn-text") && allText(n).includes("No tales on the shelf yet"),
     );

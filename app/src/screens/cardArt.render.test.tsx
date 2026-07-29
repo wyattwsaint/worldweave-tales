@@ -33,8 +33,15 @@ function isHost(type: unknown, tag: string) {
   return type === tag;
 }
 
+/**
+ * Entity-art images only. The Viewer header also renders the storytime motif
+ * plate, which is a bundled asset (a number/URL) rather than a `{ uri }` source
+ * — this contract is about the art that came back from generation.
+ */
 function images(root: ReactTestRenderer): Node[] {
-  return root.root.findAll((n) => isHost(n.type, "rn-image"));
+  return root.root.findAll(
+    (n) => isHost(n.type, "rn-image") && typeof n.props.source?.uri === "string",
+  );
 }
 
 function imageUris(root: ReactTestRenderer): string[] {

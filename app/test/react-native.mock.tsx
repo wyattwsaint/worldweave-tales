@@ -54,19 +54,33 @@ export const Platform = { OS: "ios", select: (o: Record<string, unknown>) => o.i
 // ---- useColorScheme -------------------------------------------------------
 // The theme plumbing resolves day/night from the system scheme. Tests drive it
 // through `__setColorScheme` (imported by path from this mock — the alias makes
-// it the very module the code under test sees). Set BEFORE mounting: like the
-// real hook the value is read at render, but this stub does not re-render
-// already-mounted trees.
+// it the very module the code under test sees). Like the real hook this one
+// SUBSCRIBES: setting the scheme after mount re-renders the mounted tree, so a
+// mid-story flip to dark mode is testable (wrap the set in `act`).
 
 let colorScheme: "light" | "dark" | null = "light";
+const schemeListeners = new Set<() => void>();
+
+const subscribeToScheme = (onChange: () => void) => {
+  schemeListeners.add(onChange);
+  return () => {
+    schemeListeners.delete(onChange);
+  };
+};
 
 export function useColorScheme(): "light" | "dark" | null {
-  return colorScheme;
+  return React.useSyncExternalStore(
+    subscribeToScheme,
+    () => colorScheme,
+    () => colorScheme,
+  );
 }
 
 /** Test hook (not part of react-native): set what useColorScheme reports. */
 export function __setColorScheme(scheme: "light" | "dark" | null): void {
+  if (scheme === colorScheme) return;
   colorScheme = scheme;
+  schemeListeners.forEach((listener) => listener());
 }
 
 // ---- BackHandler ----------------------------------------------------------
