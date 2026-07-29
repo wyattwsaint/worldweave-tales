@@ -93,8 +93,10 @@ describe("StorytimeVignette — band (Viewer header)", () => {
     expect(s.height).toBeCloseTo(PLATE.height * scale, 2);
     expect(s.left).toBeCloseTo(-BAND_CROP.x * scale, 2);
     expect(s.top).toBeCloseTo(-BAND_CROP.y * scale, 2);
-    // …and the crop itself is the band's aspect, or the faces would be squashed.
-    expect(BAND_CROP.width / BAND_CROP.height).toBeCloseTo(141 / 96, 2);
+    // …and the crop is EXACTLY the band's aspect — approximately-right clips a
+    // hairline off the bottom of the band, which shows as a seam.
+    expect(BAND_CROP.width / BAND_CROP.height).toBe(141 / 96);
+    expect(BAND_CROP.height * scale).toBe(96);
   });
 
   it("crops within the plate — no empty edge dragged into the band", async () => {

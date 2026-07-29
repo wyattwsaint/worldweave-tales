@@ -27,11 +27,16 @@ import sceneNight from "../../assets/scene-night.png";
 export const PLATE = { width: 768, height: 1024 } as const;
 
 /**
- * The header band's crop rectangle, in plate pixels: faces, book and star, with
- * the bedding and the lamp left outside. Its aspect is the band's 141×96 — a
- * crop of any other shape would letterbox or distort.
+ * The header band's crop rectangle, in plate pixels: both faces, the child
+ * leaning in, the star and the top of the open book — the bedding below is left
+ * outside, the bedside lamp survives at the left edge as glow. Verified against
+ * the shipped plate, not guessed: a band starting lower cuts the father's face
+ * at the mouth.
+ *
+ * 705×480 is EXACTLY the band's 141×96 aspect (both 1.46875). Any other shape
+ * would letterbox or distort, and an approximate one clips a hairline.
  */
-export const BAND_CROP = { x: 64, y: 300, width: 640, height: 436 } as const;
+export const BAND_CROP = { x: 32, y: 230, width: 705, height: 480 } as const;
 
 const BAND = { width: 141, height: 96 } as const;
 

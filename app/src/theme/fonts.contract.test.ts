@@ -49,10 +49,12 @@ describe("font wiring contract", () => {
     expect(Object.keys(appFonts).sort()).toEqual(tokenFamilies);
   });
 
-  it("maps every family to a real asset handle", () => {
-    for (const handle of Object.values(appFonts)) {
-      expect(handle).toBeDefined();
-    }
+  it("maps every family to its OWN asset — no weight pointing at another's file", () => {
+    const handles = Object.values(appFonts);
+    for (const handle of handles) expect(handle).toBeDefined();
+    // A copy-paste that loads Regular twice is invisible on screen until a bold
+    // heading renders in book weight; distinct handles catch it here.
+    expect(new Set(handles).size).toBe(handles.length);
   });
 
   it("names only families the installed @expo-google-fonts packages export", () => {

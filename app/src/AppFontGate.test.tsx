@@ -12,8 +12,7 @@ import { __setColorScheme } from "../test/react-native.mock";
 import App from "../App";
 import LibraryScreen from "./screens/LibraryScreen";
 import { FakeProxyClient } from "./api/fakeProxyClient";
-import { appFonts } from "./theme/fonts";
-import { palettes } from "./theme/tokens";
+import { palettes, typography } from "./theme/tokens";
 import { setBlobFs, store } from "./storage/store";
 import type { BlobFs } from "./storage/blobStore";
 
@@ -86,7 +85,17 @@ afterEach(async () => {
 describe("font gate", () => {
   it("asks expo-font for exactly the token scale's families", async () => {
     await mountApp();
-    expect(__requestedFonts()).toEqual(appFonts);
+    // Against the TOKENS, not against `appFonts` — comparing the request to the
+    // map it was built from would pass even if the app loaded nothing the
+    // screens actually render in.
+    const wanted = [
+      ...new Set(
+        Object.values(typography)
+          .map((t) => (t as { fontFamily?: string }).fontFamily)
+          .filter((f): f is string => typeof f === "string"),
+      ),
+    ].sort();
+    expect(Object.keys(__requestedFonts() ?? {}).sort()).toEqual(wanted);
   });
 
   it("holds the splash and paints no screen until the faces are in", async () => {

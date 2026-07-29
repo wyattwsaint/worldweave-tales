@@ -51,7 +51,9 @@ function Shell({ client }: { client?: ProxyClientLike }) {
   // the module-scope hold above. The themed ground below is already mounted
   // behind the splash, so the handoff is parchment-to-parchment.
   useEffect(() => {
-    if (fontsReady) void SplashScreen.hideAsync();
+    // Rejection ignored for the same reason as the hold: it only means the
+    // splash is already gone.
+    if (fontsReady) void SplashScreen.hideAsync().catch(() => {});
   }, [fontsReady]);
 
   return (

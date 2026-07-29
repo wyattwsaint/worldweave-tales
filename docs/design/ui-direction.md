@@ -203,6 +203,10 @@ above is now fully wired rather than partly aspirational.
   gives the empty shelf the full portrait (capped at 280pt so a tablet gets a
   plate, not a poster). The primitives-only placeholder composition is retired,
   and the app still carries no SVG dependency.
-- **Night mode is live, not just at boot.** The theme now re-renders MOUNTED
-  trees when the system scheme flips, so a parent switching the phone to dark
-  mid-story repaints the open page.
+- **The night-mode flip is now actually covered.** `ThemeContext` was always
+  correct — the real `useColorScheme` subscribes, so a parent switching the
+  phone to dark mid-story has always repainted the open page. The FICTION was
+  the test double: it read a module variable and never re-rendered, so nothing
+  held the behaviour down. The double now subscribes like the real hook, and
+  `ThemeContext.test.tsx` covers a mounted tree re-theming mid-flight. No
+  production behaviour changed.
