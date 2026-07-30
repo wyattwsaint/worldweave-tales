@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import type { Card, Storyworld } from "@wwt/domain";
+import type { ArtStyle, Card, Storyworld } from "@wwt/domain";
 import { useNav, type ViewerParams } from "../nav/NavContext";
 import { artDownloader, blobFs, store, whenStoreReady } from "../storage/store";
 import { arcTitle, persistFinishedWorld } from "../storage/persistence";
@@ -52,6 +52,15 @@ const PAGE_WORDS = [
   "twelve",
 ];
 
+/**
+ * Style for a world saved before the proxy returned one (legacy callers only) —
+ * the MVP pencil preset, matching what the pipeline itself falls back to.
+ */
+const FALLBACK_ART_STYLE: ArtStyle = {
+  presetId: "pencil-sketch",
+  displayName: "Imaginative Pencil-Sketch",
+};
+
 /** Reader-facing page number as a word ("Page four"); digits past twelve. */
 function pageWord(n: number): string {
   return PAGE_WORDS[n - 1] ?? String(n);
@@ -66,8 +75,35 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
   const { navigate, goHome } = useNav();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const { arc, cards, bible, source } = params;
-  const byId = new Map<string, Card>(cards.map((c) => [c.entityId, c]));
+  const { arc, cards, bible, artStyle, source } = params;
+
+  /**
+   * A continued arc deals RECURRING canon whose art was locked in an earlier arc
+   * (#10): those cards live in the stored world, not in this response, so without
+   * them a returning character's page would render with no picture. Loaded once
+   * on mount; empty for a world's first arc.
+   */
+  const [priorDeck, setPriorDeck] = useState<Card[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        await whenStoreReady();
+        const prior = await store.getWorld(arc.worldId);
+        if (!cancelled && prior) setPriorDeck(prior.deck);
+      } catch {
+        // A missing prior world is normal (first arc) and never fatal: the page
+        // still reads, it just shows the art this arc brought with it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [arc.worldId]);
+
+  // This arc's cards WIN over the stored ones: on the creation path they are the
+  // freshly canonized versions of the same entity.
+  const byId = new Map<string, Card>([...priorDeck, ...cards].map((c) => [c.entityId, c]));
 
   const [page, setPage] = useState(0);
   const beats = arc.beats;
@@ -113,7 +149,10 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
     const world: Storyworld = {
       id: arc.worldId,
       name: arcTitle(arc),
-      artStyle: { presetId: "pencil-sketch", displayName: "Imaginative Pencil-Sketch" },
+      // The style the proxy actually drew through, so the next arc in this world
+      // is drawn the same way. persistFinishedWorld keeps a continued world's
+      // stored style, so this only ever establishes a NEW world's.
+      artStyle: artStyle ?? FALLBACK_ART_STYLE,
       defaultAgeBand: arc.ageBand,
       deck: cards,
       bible,
@@ -132,7 +171,7 @@ export default function ViewerScreen({ params }: { params: ViewerParams }) {
     return () => {
       cancelled = true;
     };
-  }, [arc, cards, bible, source]);
+  }, [arc, cards, bible, artStyle, source]);
 
   /**
    * Waits out an in-flight save before going home. If that save failed and the

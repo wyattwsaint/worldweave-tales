@@ -7,6 +7,7 @@ import {
   type GenerateArcResponse,
   type GeneratedCardChoice,
   type StoryBible,
+  type Storyworld,
 } from "@wwt/domain";
 
 /**
@@ -20,13 +21,27 @@ import {
  */
 export class FakeProxyClient {
   private readonly canonizedAt: string;
+  private readonly start: number;
+  /** Arcs woven so far by THIS instance — keeps ids/timestamps distinct without a clock. */
+  private arcCount = 0;
 
   constructor(now: Date = new Date("2026-01-01T00:00:00.000Z")) {
     this.canonizedAt = now.toISOString();
+    this.start = now.getTime();
   }
 
   async generateArc(req: GenerateArcRequest): Promise<GenerateArcResponse> {
-    const { answers } = req;
+    const { answers, world } = req;
+    this.arcCount += 1;
+    // A minute per arc, so a world's arcs sort newest-first like real ones do.
+    const createdAt = new Date(this.start + this.arcCount * 60_000).toISOString();
+    const arcId = `arc-fake-${this.arcCount}`;
+    // CONTINUING a world (#10): the whole locked deck comes back by its real
+    // entityIds, so nothing needs drawing and nothing needs picking — exactly
+    // the shape the pipeline produces when recurring canon covers the cast.
+    if (world) {
+      return this.continueWorld(req, world, arcId, createdAt);
+    }
 
     const beats: Beat[] = INVARIANT_SPINE.map((spineBeat) => ({
       spineBeat,
@@ -80,7 +95,7 @@ export class FakeProxyClient {
       })),
       eventLog: [
         {
-          arcId: "arc-fake-1",
+          arcId,
           summary: "A short, safe adventure that lands its lesson warmly.",
           lessonTaught: virtue,
         },
@@ -88,17 +103,91 @@ export class FakeProxyClient {
       worldState: ["The world is calm and the lesson has been learned."],
       openThreads: [
         {
-          id: "thread-fake-1",
+          id: `thread-${arcId}`,
           teaser: "A tiny door in the old willow was left just barely ajar.",
-          originArcId: "arc-fake-1",
+          originArcId: arcId,
           resolved: false,
         },
       ],
       virtuesTaught: [virtue],
     };
 
-    const arc: Arc = {
-      id: "arc-fake-1",
+    return {
+      arc: this.arc(answers, arcId, createdAt, beats),
+      artStyle: DEFAULT_ART_STYLE,
+      newCanonCards,
+      pendingCardChoices,
+      bible,
+    };
+  }
+
+  /**
+   * A CONTINUED arc: every locked card comes back by its real entityId, so the
+   * response has no new cards and no pending picks. The bible grows append-only
+   * (this arc's event + a fresh hook) and the springboard the parent chose is
+   * marked resolved — mirroring what the proxy's deterministic merge does.
+   */
+  private continueWorld(
+    req: GenerateArcRequest,
+    world: Storyworld,
+    arcId: string,
+    createdAt: string,
+  ): GenerateArcResponse {
+    const { answers } = req;
+    const virtue = describeTeachingPoint(answers);
+    const canonIds = world.deck.map((c) => c.entityId);
+    const villainIds = world.deck.filter((c) => c.role === "villain").map((c) => c.entityId);
+    const alwaysDealt = canonIds.filter((id) => !villainIds.includes(id));
+
+    const beats: Beat[] = INVARIANT_SPINE.map((spineBeat) => ({
+      spineBeat,
+      text: `[${spineBeat}] Back in ${world.name}, a gentle telling of "${virtue}".`,
+      // The villain returns when the virtue is tested and stays through the win.
+      dealtCardIds:
+        spineBeat === "virtue-tested" || spineBeat === "good-triumphs"
+          ? canonIds
+          : alwaysDealt,
+    }));
+
+    const prior = world.bible;
+    const bible: StoryBible = {
+      entitySheets: prior.entitySheets,
+      eventLog: [
+        ...prior.eventLog,
+        { arcId, summary: `Another quiet adventure in ${world.name}.`, lessonTaught: virtue },
+      ],
+      worldState: prior.worldState,
+      openThreads: [
+        ...prior.openThreads.map((t) =>
+          t.id === answers.continueThreadId ? { ...t, resolved: true } : t,
+        ),
+        {
+          id: `thread-${arcId}`,
+          teaser: "Someone left a lantern burning at the top of the hill.",
+          originArcId: arcId,
+          resolved: false,
+        },
+      ],
+      virtuesTaught: [...prior.virtuesTaught, virtue],
+    };
+
+    return {
+      arc: this.arc(answers, arcId, createdAt, beats),
+      artStyle: world.artStyle,
+      newCanonCards: [],
+      pendingCardChoices: [],
+      bible,
+    };
+  }
+
+  private arc(
+    answers: GenerateArcRequest["answers"],
+    id: string,
+    createdAt: string,
+    beats: Beat[],
+  ): Arc {
+    return {
+      id,
       worldId: answers.worldId ?? "new-world",
       tier: answers.tier,
       ageBand: answers.ageBand,
@@ -106,12 +195,17 @@ export class FakeProxyClient {
       teachingPoint: answers.teachingPoint,
       closingVerseEnabled: answers.closingVerseEnabled,
       beats,
-      createdAt: this.canonizedAt,
+      createdAt,
     };
-
-    return { arc, newCanonCards, pendingCardChoices, bible };
   }
 }
+
+/** What the proxy pipeline falls back to for a brand-new world. */
+const DEFAULT_ART_STYLE = {
+  presetId: "pencil-mvp",
+  displayName: "Imaginative Pencil Sketch",
+  providerStyleRef: "stub-style:pencil-mvp",
+};
 
 function variants(role: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => `stub-image:${role}#${i}`);

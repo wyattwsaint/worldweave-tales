@@ -76,6 +76,37 @@ describe("ThemeContext", () => {
     expect(seen?.colors).toBe(palettes.night);
   });
 
+  it("re-themes a MOUNTED tree when the system scheme flips", async () => {
+    // The real hook subscribes to Appearance: a parent flipping the phone to
+    // dark mode mid-story must repaint the open screen, not just the next one.
+    __setColorScheme("light");
+    await mount(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(seen?.mode).toBe("day");
+
+    await act(async () => {
+      __setColorScheme("dark");
+    });
+    expect(seen?.mode).toBe("night");
+    expect(seen?.colors).toBe(palettes.night);
+  });
+
+  it("an explicit mode prop keeps a mounted tree pinned across a scheme flip", async () => {
+    __setColorScheme("light");
+    await mount(
+      <ThemeProvider mode="day">
+        <Probe />
+      </ThemeProvider>,
+    );
+    await act(async () => {
+      __setColorScheme("dark");
+    });
+    expect(seen?.mode).toBe("day");
+  });
+
   it("exposes the token typography scale", async () => {
     await mount(
       <ThemeProvider>

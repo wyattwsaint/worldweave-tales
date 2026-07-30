@@ -78,8 +78,20 @@ export interface WizardNode {
 /** A saved thread was offered to the parent (app sets the `__hasThreads` flag). */
 const hasThreadsOffered = (a: NodeAnswers): boolean => a.__hasThreads === true;
 
-/** No open thread has been chosen to continue. */
-const noThreadChosen = (a: NodeAnswers): boolean => !a.continueThread;
+/**
+ * This wizard run is a CONTINUATION of an existing Storyworld (the app sets the
+ * `__continuing` flag when the parent taps "weave a new tale" on a saved world).
+ *
+ * Gating on continue-mode — NOT on "a thread was picked" — is deliberate: a
+ * continued world already HAS its world, hero, and villain in locked canon
+ * (deck + bible), so re-asking for them invites prose that contradicts the art.
+ * Picking a springboard thread stays purely optional (SPEC #24 "never
+ * mandated"), and declining one must not resurrect those questions.
+ */
+const continuingWorld = (a: NodeAnswers): boolean => a.__continuing === true;
+
+/** A brand-new Storyworld: the canon questions belong here and only here. */
+const newWorld = (a: NodeAnswers): boolean => !continuingWorld(a);
 
 /** The current tier offers the free-text teaching box. */
 const teachingFreeText = (a: NodeAnswers): boolean => {
@@ -144,7 +156,7 @@ export const WIZARD_GRAPH: readonly WizardNode[] = [
     tiers: ALL_TIERS,
     required: false,
     default: "", // "surprise me"
-    visibleWhen: noThreadChosen,
+    visibleWhen: newWorld,
     binding: { target: "choice", key: "world" },
   },
   {
@@ -153,7 +165,7 @@ export const WIZARD_GRAPH: readonly WizardNode[] = [
     tiers: ALL_TIERS,
     required: false,
     default: "",
-    visibleWhen: noThreadChosen,
+    visibleWhen: newWorld,
     binding: { target: "choice", key: "hero" },
   },
   {
@@ -161,8 +173,20 @@ export const WIZARD_GRAPH: readonly WizardNode[] = [
     kind: "text",
     tiers: ["solid", "epic"],
     required: false,
-    visibleWhen: noThreadChosen,
+    visibleWhen: newWorld,
     binding: { target: "choice", key: "villain" },
+  },
+  {
+    // The continued world's ONE steering lever: canon is fixed, so instead of
+    // re-asking who everyone is we ask what happens to them this time. Optional
+    // — blank means "surprise me", exactly like the new-world text nodes.
+    id: "newTwist",
+    kind: "text",
+    tiers: ALL_TIERS,
+    required: false,
+    default: "",
+    visibleWhen: continuingWorld,
+    binding: { target: "choice", key: "newTwist" },
   },
   {
     id: "arcShape",

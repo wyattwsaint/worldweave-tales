@@ -1,17 +1,29 @@
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { StyleSheet, View } from "react-native";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
+import { useAppFonts } from "./src/theme/fonts";
 import { NavProvider, useNav } from "./src/nav/NavContext";
 import LibraryScreen from "./src/screens/LibraryScreen";
+import WorldScreen from "./src/screens/WorldScreen";
 import WizardScreen from "./src/screens/WizardScreen";
 import CardPickScreen from "./src/screens/CardPickScreen";
 import ViewerScreen from "./src/screens/ViewerScreen";
 import type { ProxyClientLike } from "./src/api/proxyClient";
 
+// Hold the native splash past the first frame: the brand faces load async, and
+// the one thing worse than a slightly longer splash is a frame of the story in
+// the system font. Released in Shell once the faces are in (or have failed).
+// Rejection is ignored on purpose — it only means the splash is already gone.
+void SplashScreen.preventAutoHideAsync().catch(() => {});
+
 /**
  * App root. Wraps the hand-rolled navigator and renders the current screen.
  * Starts on the Library shelf (the home surface, #8); ＋ New Story runs
- * Wizard -> Card-Pick -> Viewer, and the Viewer's ‹ Shelf returns home.
+ * Wizard -> Card-Pick -> Viewer, and the Viewer's ‹ Shelf returns home. Tapping
+ * a saved world opens its own screen (#10), from which a new arc re-enters the
+ * same wizard in continue mode.
  *
  * `client` is an optional proxy-client seam: production leaves it undefined so
  * the wizard uses the real ProxyClient; tests inject a network-free fake.
@@ -36,9 +48,20 @@ export default function App({ client }: { client?: ProxyClientLike } = {}) {
  */
 function Shell({ client }: { client?: ProxyClientLike }) {
   const { mode, colors } = useTheme();
+  const fontsReady = useAppFonts();
+
+  // Hand the splash off only when the app can paint in its own faces — see
+  // the module-scope hold above. The themed ground below is already mounted
+  // behind the splash, so the handoff is parchment-to-parchment.
+  useEffect(() => {
+    // Rejection ignored for the same reason as the hold: it only means the
+    // splash is already gone.
+    if (fontsReady) void SplashScreen.hideAsync().catch(() => {});
+  }, [fontsReady]);
+
   return (
     <View style={[styles.shell, { backgroundColor: colors.bg }]}>
-      <CurrentScreen client={client} />
+      {fontsReady ? <CurrentScreen client={client} /> : null}
       <StatusBar style={mode === "night" ? "light" : "dark"} />
     </View>
   );
@@ -49,8 +72,10 @@ function CurrentScreen({ client }: { client?: ProxyClientLike }) {
   switch (state.screen) {
     case "library":
       return <LibraryScreen />;
+    case "world":
+      return <WorldScreen params={state.params} />;
     case "wizard":
-      return <WizardScreen client={client} />;
+      return <WizardScreen client={client} params={state.params} />;
     case "cardpick":
       return <CardPickScreen params={state.params} />;
     case "viewer":

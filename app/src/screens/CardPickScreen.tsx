@@ -44,16 +44,28 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
 
   const [picks, setPicks] = useState<Record<string, string>>({});
 
-  const allPicked = choices.every((c) => picks[c.role]);
+  // Keyed by entityId, NOT role: an arc can introduce two villain-class entities,
+  // and a role key would apply one tapped look to both of them.
+  const allPicked = choices.every((c) => picks[c.entityId]);
 
   function onConfirm() {
     const now = new Date();
     const pickedCards: Card[] = choices.map((choice) => {
       const base = draftCard(choice, answers.choices[choice.role]);
-      return applyCardPick(base, picks[choice.role], now);
+      return applyCardPick(base, picks[choice.entityId], now);
     });
     const cards: Card[] = [...pickedCards, ...response.newCanonCards];
-    navigate({ screen: "viewer", params: { arc: response.arc, cards, bible: response.bible } });
+    navigate({
+      screen: "viewer",
+      params: {
+        arc: response.arc,
+        cards,
+        bible: response.bible,
+        // The style the art was actually drawn through — persisted with the
+        // world so every future arc is drawn the same way (SPEC #22).
+        artStyle: response.artStyle,
+      },
+    });
   }
 
   return (
@@ -74,13 +86,13 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
         </Text>
 
         {choices.map((choice) => (
-          <View key={choice.role} style={styles.group}>
+          <View key={choice.entityId} style={styles.group}>
             <Text style={styles.role} maxFontSizeMultiplier={1.4}>
               {choice.role}
             </Text>
             <View style={styles.lookRow}>
               {choice.variantImageRefs.map((ref, i) => {
-                const on = picks[choice.role] === ref;
+                const on = picks[choice.entityId] === ref;
                 const source = artImageSource(ref, blobFs);
                 // The row's ends lean into the page — the hand-placed feel.
                 const tilt =
@@ -98,7 +110,7 @@ export default function CardPickScreen({ params }: { params: CardPickParams }) {
                     )} for the ${choice.role}`}
                     accessibilityState={{ selected: on }}
                     style={pressedStyle(styles.look)}
-                    onPress={() => setPicks((p) => ({ ...p, [choice.role]: ref }))}
+                    onPress={() => setPicks((p) => ({ ...p, [choice.entityId]: ref }))}
                   >
                     <View style={[styles.lookArt, tilt, on && styles.lookArtOn]}>
                       {source ? (

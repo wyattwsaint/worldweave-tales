@@ -21,6 +21,14 @@ export default defineConfig({
       "react-native": r("./test/react-native.mock.tsx"),
       "expo-status-bar": r("./test/expo-status-bar.mock.tsx"),
       "expo-constants": r("./test/expo-constants.mock.ts"),
+      "expo-font": r("./test/expo-font.mock.ts"),
+      "expo-splash-screen": r("./test/expo-splash-screen.mock.ts"),
+      // All three font packages share one stub — each import picks the names it
+      // needs, and fonts.contract.test.ts checks those names against the real
+      // installed packages so the stub cannot drift.
+      "@expo-google-fonts/alegreya": r("./test/expo-google-fonts.mock.ts"),
+      "@expo-google-fonts/alegreya-sc": r("./test/expo-google-fonts.mock.ts"),
+      "@expo-google-fonts/alegreya-sans": r("./test/expo-google-fonts.mock.ts"),
     },
   },
   test: {

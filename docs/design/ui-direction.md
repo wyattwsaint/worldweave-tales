@@ -183,3 +183,30 @@ palette-aware art plate plus entity name/role caption; dismiss via tap
 anywhere, ✕, or Esc; ~200ms fade/scale-in entrance.
 
 These values are enforced by the §8 tokens contract tests.
+
+## Amendment 2026-07-29 — the #5 follow-ups closed
+
+The three items PR #18 listed as "known follow-ups" have landed; the direction
+above is now fully wired rather than partly aspirational.
+
+- **Fonts are real.** `@expo-google-fonts/{alegreya,alegreya-sc,alegreya-sans}`
+  + `expo-font`, loaded through `app/src/theme/fonts.ts`. The map's keys ARE the
+  `fontFamily` strings in `tokens.ts`, checked both ways (and against the
+  installed packages' declarations) by `fonts.contract.test.ts`, so a token can
+  never name a face the app does not load. The native splash is held past the
+  first frame and dropped only once the faces are in — a load FAILURE also
+  releases it, in the fallback face: a missing typeface must never trap a child
+  waiting for a story.
+- **The motif is the real plate.** `StorytimeVignette` renders the shipped
+  pencil-sketch scene (`assets/scene-{day,night}.png`) in the A+B split above:
+  `variant="band"` crops it to the locked 141×96 Viewer header, `variant="plate"`
+  gives the empty shelf the full portrait (capped at 280pt so a tablet gets a
+  plate, not a poster). The primitives-only placeholder composition is retired,
+  and the app still carries no SVG dependency.
+- **The night-mode flip is now actually covered.** `ThemeContext` was always
+  correct — the real `useColorScheme` subscribes, so a parent switching the
+  phone to dark mid-story has always repainted the open page. The FICTION was
+  the test double: it read a module variable and never re-rendered, so nothing
+  held the behaviour down. The double now subscribes like the real hook, and
+  `ThemeContext.test.tsx` covers a mounted tree re-theming mid-flight. No
+  production behaviour changed.

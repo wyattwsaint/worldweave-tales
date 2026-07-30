@@ -140,6 +140,41 @@ describe("ApiLlmProvider.writeArc", () => {
     expect(promptText).toContain("firstBeatIndex");
   });
 
+  it("puts the canon roster's exact entityIds in the prompt when continuing (#10)", async () => {
+    const { client, create } = fakeClient(
+      JSON.stringify({ beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })) }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    await provider.writeArc({
+      answers,
+      shape: "quest",
+      bible,
+      canon: [
+        { entityId: "pip", role: "hero", canonName: "Pip", appearanceNote: "a mouse in a red cloak" },
+      ],
+    });
+
+    const promptText = JSON.stringify(create.mock.calls[0][0].messages);
+    // The id is the contract — the pipeline matches recurring cast on it exactly.
+    expect(promptText).toContain("pip");
+    expect(promptText).toContain("Pip");
+    expect(promptText).toContain("a mouse in a red cloak");
+    expect(promptText).toMatch(/exact/i);
+  });
+
+  it("omits the canon roster entirely for a brand-new world", async () => {
+    const { client, create } = fakeClient(
+      JSON.stringify({ beats: fullSpineBeats.map(({ spineBeat, text }) => ({ spineBeat, text })) }),
+    );
+    const provider = new ApiLlmProvider({ client, model: "claude-haiku-4-5" });
+
+    await provider.writeArc({ answers, shape: "quest", bible });
+
+    const promptText = JSON.stringify(create.mock.calls[0][0].messages);
+    expect(promptText).not.toContain("EXISTING CANON");
+  });
+
   it("defaults an empty cast when the model omits it", async () => {
     const { client } = fakeClient(
       JSON.stringify({

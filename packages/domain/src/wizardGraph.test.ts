@@ -135,17 +135,51 @@ describe("getVisibleNodes — inclusions / exclusions", () => {
     expect(ids("epic", { tier: "epic", __hasThreads: true })).toContain("continueThread");
   });
 
-  it("selecting a thread hides world / hero / villain", () => {
-    const withThread: NodeAnswers = {
+  it("continuing a world hides world / hero / villain and offers newTwist (#10)", () => {
+    const continuing: NodeAnswers = {
       tier: "epic",
+      __continuing: true,
       __hasThreads: true,
       continueThread: "thread-7",
     };
-    const v = getVisibleNodes("epic", withThread).map((n) => n.id);
+    const v = getVisibleNodes("epic", continuing).map((n) => n.id);
     expect(v).toContain("continueThread");
+    expect(v).toContain("newTwist");
+    // Locked canon already answers these; re-asking invites contradictions.
     expect(v).not.toContain("world");
     expect(v).not.toContain("hero");
     expect(v).not.toContain("villain");
+  });
+
+  it("DECLINING the thread still hides the canon questions while continuing (#10)", () => {
+    // The springboard is optional (SPEC #24 "never mandated") — declining it
+    // must not resurrect world/hero/villain for a world that already has canon.
+    const v = getVisibleNodes("epic", { tier: "epic", __continuing: true, __hasThreads: true }).map(
+      (n) => n.id,
+    );
+    expect(v).not.toContain("world");
+    expect(v).not.toContain("hero");
+    expect(v).not.toContain("villain");
+    expect(v).toContain("newTwist");
+  });
+
+  it("a brand-new world asks the canon questions and hides newTwist", () => {
+    const v = ids("epic");
+    expect(v).toContain("world");
+    expect(v).toContain("hero");
+    expect(v).toContain("villain");
+    expect(v).not.toContain("newTwist");
+  });
+
+  it("assembles the continued world's twist into choices.newTwist", () => {
+    const raw = assembleRawPicks({
+      tier: "solid",
+      ageBand: "toddler",
+      __continuing: true,
+      newTwist: "  the tiny door finally opens  ",
+    });
+    expect(raw.choices.newTwist).toBe("the tiny door finally opens");
+    expect(raw.choices.world).toBeUndefined();
   });
 
   it("situation is gated by teachingFreeText", () => {

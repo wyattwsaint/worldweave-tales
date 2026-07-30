@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type {
   Beat,
+  Card,
   CastMember,
   StoryBible,
   WizardAnswers,
@@ -17,6 +18,17 @@ import { config, usingStubLlm } from "../config.js";
  * a beat can never reference a card that was dropped or never canonized.
  */
 export type ProseBeat = Pick<Beat, "spineBeat" | "text">;
+
+/**
+ * One entry of the CANON ROSTER handed to the authoring model when continuing a
+ * Storyworld (#10): the deck's own view of who already exists.
+ *
+ * The deck — not the LLM-maintained bible — is the source of truth here, because
+ * `diffCastAgainstCanon` matches on exact `entityId`. Without the roster a
+ * returning hero comes back as a *fresh* entity, gets redrawn, and the child sees
+ * a different face for the same character.
+ */
+export type CanonEntry = Pick<Card, "entityId" | "role" | "canonName" | "appearanceNote">;
 
 /** The single authoring call's output: prose beats + a transient cast. */
 export interface AuthoredArc {
@@ -60,6 +72,8 @@ export interface LlmProvider {
     answers: WizardAnswers;
     shape: ArcShape;
     bible?: StoryBible;
+    /** The existing deck's roster — returning cast MUST reuse these entityIds. */
+    canon?: CanonEntry[];
   }): Promise<AuthoredArc>;
 
   /** After a book, summarize the arc + update the bible (returns the new bible). */
@@ -72,16 +86,34 @@ export interface LlmProvider {
 
 /** STUB — deterministic placeholder prose so the pipeline runs end-to-end. */
 export class StubLlmProvider implements LlmProvider {
-  async writeArc(input: { answers: WizardAnswers; shape: ArcShape }): Promise<AuthoredArc> {
+  async writeArc(input: {
+    answers: WizardAnswers;
+    shape: ArcShape;
+    canon?: CanonEntry[];
+  }): Promise<AuthoredArc> {
     const age = AGE_BANDS[input.answers.ageBand];
     // One beat per spine step; pad to the age's beat count with journey beats.
     const beats: ProseBeat[] = INVARIANT_SPINE.map((spineBeat) => ({
       spineBeat,
       text: `[stub ${spineBeat}] a ${input.shape} story for ages ${age.approxAges}.`,
     }));
+    const virtueTestedIndex = Math.max(0, INVARIANT_SPINE.indexOf("virtue-tested"));
+    // Continuing a world: bring the WHOLE existing deck back by its real ids, so
+    // the stub exercises the recurring-canon path (nothing new to draw) the way a
+    // continued arc actually behaves.
+    if (input.canon?.length) {
+      return {
+        beats,
+        cast: input.canon.map((entry) => ({
+          entityId: entry.entityId,
+          role: entry.role,
+          appearanceNote: entry.appearanceNote,
+          firstBeatIndex: entry.role === "villain" ? virtueTestedIndex : 0,
+        })),
+      };
+    }
     // A hero (beat 0) and a villain (entering when the virtue is tested) so the
     // downstream diff/cap/derivation has representative cast to work with.
-    const virtueTestedIndex = Math.max(0, INVARIANT_SPINE.indexOf("virtue-tested"));
     const cast: CastMember[] = [
       { entityId: "hero", role: "hero", appearanceNote: "[stub hero]", firstBeatIndex: 0 },
       { entityId: "villain", role: "villain", appearanceNote: "[stub villain]", firstBeatIndex: virtueTestedIndex },
@@ -399,8 +431,24 @@ export class ApiLlmProvider implements LlmProvider {
     answers: WizardAnswers;
     shape: ArcShape;
     bible?: StoryBible;
+    canon?: CanonEntry[];
   }): Promise<AuthoredArc> {
     const age = AGE_BANDS[input.answers.ageBand];
+    // The canon roster is a HARD id contract, not background reading: the app
+    // matches recurring cast by exact entityId, and a near-miss id costs the
+    // child a redrawn face for a character they already know.
+    const canonBlock = input.canon?.length
+      ? `EXISTING CANON (already drawn, art locked forever). Any of these who ` +
+        `appear MUST be listed in the cast with their EXACT "entityId" below — ` +
+        `never a new id, never a renamed one, and never re-described:\n` +
+        input.canon
+          .map(
+            (c) =>
+              `- entityId "${c.entityId}" — ${c.canonName} (${c.role}): ${c.appearanceNote}`,
+          )
+          .join("\n") +
+        `\nOnly a genuinely NEW character, place, or artifact gets a new entityId.\n`
+      : "";
     const prompt =
       `Write the beats of a "${input.shape}" story for ages ${age.approxAges} ` +
       `(~${age.beatCount} beats, ~${age.wordsPerBeat} words each, peril ceiling ` +
@@ -408,6 +456,7 @@ export class ApiLlmProvider implements LlmProvider {
       `${INVARIANT_SPINE.join(", ")}.\n` +
       `Wizard answers: ${JSON.stringify(input.answers)}\n` +
       `Story Bible (canon to honor): ${JSON.stringify(input.bible ?? null)}\n` +
+      canonBlock +
       `Also list the CAST: every character, place, or artifact that appears — ` +
       `whether newly introduced OR reused from the Story Bible canon above. For ` +
       `each, give its "entityId" (reuse the SAME id for a canon entity), "role", ` +

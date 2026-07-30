@@ -157,38 +157,11 @@ describe("LibraryScreen — the home bookshelf", () => {
       pressableByLabel(root, "Willowmere").props.onPress();
     });
 
-    expect(navState).toMatchObject({ screen: "viewer" });
-    const params = (navState as Extract<NavState, { screen: "viewer" }>).params;
-    expect(params.arc.id).toBe("arc-new");
-    expect(params.cards).toEqual(world.deck);
-    expect(params.bible).toEqual(world.bible);
-  });
-
-  it("openWorld fetches the full world and its arcs concurrently, not sequentially", async () => {
-    await store.saveWorld(sampleWorld({ id: "w1" }));
-    await store.saveArc(sampleArc({ id: "arc-1", worldId: "w1" }));
-
-    // Hold getWorld open: the arc fetch must already be in flight while the
-    // world fetch is still pending (independent reads run via Promise.all).
-    const realGetWorld = store.getWorld.bind(store);
-    let releaseGetWorld!: () => void;
-    const gate = new Promise<void>((resolve) => (releaseGetWorld = resolve));
-    vi.spyOn(store, "getWorld").mockImplementation(async (id) => {
-      await gate;
-      return realGetWorld(id);
-    });
-    const listArcs = vi.spyOn(store, "listArcs");
-
-    const root = await mountShelf();
-    act(() => {
-      pressableByLabel(root, "Willowmere").props.onPress();
-    });
-    expect(listArcs).toHaveBeenCalledWith("w1");
-
-    await act(async () => {
-      releaseGetWorld();
-    });
-    expect(navState).toMatchObject({ screen: "viewer" });
+    // A world owns MANY arcs (#10), so the shelf opens the WORLD — which arc to
+    // re-read is a question for the world's own screen, not a silent newest-pick.
+    expect(navState).toEqual({ screen: "world", params: { worldId: "w1" } });
+    // The shelf itself never loaded a payload to get there.
+    expect(world.deck.length).toBeGreaterThan(0);
   });
 
   it("renders the friendly empty state whose ＋ New Story CTA launches the Wizard", async () => {
@@ -204,18 +177,6 @@ describe("LibraryScreen — the home bookshelf", () => {
     vi.spyOn(store, "listWorldSummaries").mockRejectedValue(new Error("db locked"));
     const root = await mountShelf();
     expect(allText(root.root)).toContain("Couldn't load your bookshelf");
-  });
-
-  it("stays on the shelf with an inline error when a world fails to open", async () => {
-    await store.saveWorld(sampleWorld({ id: "w1" })); // world saved, but no arc
-    const root = await mountShelf();
-    await act(async () => {
-      pressableByLabel(root, "Willowmere").props.onPress();
-    });
-    expect(navState).toEqual({ screen: "library" });
-    const text = allText(root.root);
-    expect(text).toContain("Couldn't open that story");
-    expect(text).toContain("Willowmere"); // still shelved
   });
 
   it("is the app's home surface: App mounts on the shelf, not the Wizard", async () => {
@@ -241,8 +202,12 @@ describe("LibraryScreen — the home bookshelf", () => {
     await act(async () => {
       root = TestRenderer.create(<App client={new FakeProxyClient()} />);
     });
+    // Shelf → the world → re-read its tale.
     await act(async () => {
       pressableByLabel(root, "Willowmere").props.onPress();
+    });
+    await act(async () => {
+      pressableByLabel(root, "courage").props.onPress();
     });
 
     expect(allText(root.root)).toContain("Your Tale"); // the Viewer is open...
@@ -259,6 +224,9 @@ describe("LibraryScreen — the home bookshelf", () => {
     });
     await act(async () => {
       pressableByLabel(root, "Willowmere").props.onPress();
+    });
+    await act(async () => {
+      pressableByLabel(root, "courage").props.onPress();
     });
     expect(allText(root.root)).toContain("Your Tale");
     await act(async () => {
