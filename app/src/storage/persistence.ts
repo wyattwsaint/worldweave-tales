@@ -56,8 +56,34 @@ export async function persistFinishedWorld(
   deps: PersistDeps,
 ): Promise<Storyworld> {
   const deck = deps.downloadArt ? await localizeDeck(world.deck, deps.downloadArt) : world.deck;
-  const persisted: Storyworld = { ...world, deck };
+  // A world that already exists on the shelf is being CONTINUED (#10), so this
+  // is a merge, not an overwrite — a plain upsert would drop every prior arc's
+  // canon the moment arc 2 was saved.
+  const prior = await deps.store.getWorld(world.id);
+  const persisted = prior ? mergeIntoWorld(prior, { ...world, deck }, arc) : { ...world, deck };
   await deps.store.saveWorld(persisted);
   await deps.store.saveArc(arc);
   return persisted;
+}
+
+/**
+ * Fold a newly finished arc's world into the world already on the shelf.
+ *
+ * What the STORED world keeps: its name (the shelf label the parent recognizes),
+ * its locked `artStyle`, its `createdAt` ("kept since"), its `defaultAgeBand`,
+ * and — card for card — its existing deck. Locked art is never redrawn (SPEC
+ * §2.22), so an incoming card that shares an `entityId` with a stored one is
+ * DISCARDED rather than merged: the stored card is the canonical one, art ref and
+ * all. What the new arc contributes: genuinely new cards, its arc id, and the
+ * freshly merged bible (the proxy already folded that append-only).
+ */
+function mergeIntoWorld(prior: Storyworld, next: Storyworld, arc: Arc): Storyworld {
+  const known = new Set(prior.deck.map((c) => c.entityId));
+  const freshCards = next.deck.filter((c) => !known.has(c.entityId));
+  return {
+    ...prior,
+    deck: [...prior.deck, ...freshCards],
+    bible: next.bible,
+    arcIds: prior.arcIds.includes(arc.id) ? prior.arcIds : [...prior.arcIds, arc.id],
+  };
 }

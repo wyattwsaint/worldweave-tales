@@ -56,6 +56,51 @@ describe("persistFinishedWorld", () => {
     expect(saved?.deck.map((c) => c.lockedImageRef)).toEqual(["blobs/hero-1.png", "blobs/villain-1.jpeg"]);
   });
 
+  it("continuing a world MERGES: new cards appended, locked art and shelf label kept (#10)", async () => {
+    const store = new InMemoryStore();
+    // Arc 1 is already on the shelf.
+    const first = sampleWorld();
+    await persistFinishedWorld(first, sampleArc(), { store });
+
+    // Arc 2 brings back the hero (same entityId, art the proxy could not know) and
+    // introduces a companion. The world object the Viewer builds is name-naive.
+    const second = sampleWorld({
+      name: "patience", // arc 2's title — must NOT become the shelf label
+      artStyle: { presetId: "pencil-sketch", displayName: "Imaginative Pencil-Sketch" },
+      createdAt: "2026-08-01T00:00:00.000Z",
+      arcIds: ["arc-2"],
+      deck: [
+        sampleCard({ lockedImageRef: "https://cdn/REDRAWN.png" }), // hero-1 again
+        sampleCard({ entityId: "fern-1", role: "companion", canonName: "Fern", lockedImageRef: "blobs/fern.png" }),
+      ],
+      bible: {
+        ...first.bible,
+        eventLog: [...first.bible.eventLog, { arcId: "arc-2", summary: "Pip waited.", lessonTaught: "patience" }],
+      },
+    });
+    await persistFinishedWorld(second, sampleArc({ id: "arc-2" }), { store });
+
+    const saved = (await store.getWorld(first.id))!;
+    // Prior canon intact; the returning hero keeps the art locked in arc 1.
+    expect(saved.deck.map((c) => c.entityId)).toEqual(["hero-1", "villain-1", "fern-1"]);
+    expect(saved.deck[0].lockedImageRef).toBe("blobs/hero-1.png");
+    // Shelf identity is stable across arcs.
+    expect(saved.name).toBe("Willowmere");
+    expect(saved.createdAt).toBe("2026-07-18T00:00:00.000Z");
+    expect(saved.artStyle.providerStyleRef).toBe("sub:pencil-42");
+    // Both arcs are owned by the world, and the latest bible won.
+    expect(saved.arcIds).toEqual(["arc-1", "arc-2"]);
+    expect(saved.bible.eventLog.map((e) => e.arcId)).toEqual(["arc-1", "arc-2"]);
+    expect((await store.listArcs(first.id)).map((a) => a.id).sort()).toEqual(["arc-1", "arc-2"]);
+  });
+
+  it("re-saving the same arc does not duplicate its id", async () => {
+    const store = new InMemoryStore();
+    await persistFinishedWorld(sampleWorld(), sampleArc(), { store });
+    await persistFinishedWorld(sampleWorld(), sampleArc(), { store });
+    expect((await store.getWorld("world-willowmere"))?.arcIds).toEqual(["arc-1"]);
+  });
+
   it("leaves already-local (non-http) refs alone even with a downloader", async () => {
     const store = new InMemoryStore();
     const downloadArt = vi.fn(async () => "blobs/should-not-happen");

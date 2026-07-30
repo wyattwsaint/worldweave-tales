@@ -228,7 +228,14 @@ export interface GenerateArcRequest {
   /** Stable device id (DeviceCheck / Play Integrity) for per-device quota. */
   deviceId: string;
   answers: WizardAnswers;
-  /** Existing world state so the proxy can reuse canon + honor the bible. */
+  /**
+   * Existing world state so the proxy can reuse canon + honor the bible. Set
+   * when continuing a Storyworld (#10).
+   *
+   * The deck's `lockedImageRef`s are ON-DEVICE blob paths and are BLANKED before
+   * sending: the proxy only needs entityIds, appearance notes, the bible, and
+   * the locked `artStyle` — never the reader's filesystem layout.
+   */
   world?: Storyworld;
 }
 
@@ -250,6 +257,13 @@ export interface GeneratedCardChoice {
 
 export interface GenerateArcResponse {
   arc: Arc;
+  /**
+   * The world's ONE resolved art style, including the provider handle the cards
+   * were actually drawn through. Persisted with the world and sent back on the
+   * next arc, so arc 5's art is drawn in the same style as arc 1's (SPEC #22) —
+   * a re-derived style would silently drift.
+   */
+  artStyle: ArtStyle;
   /** New cards already canonized (AI-derived, single option). */
   newCanonCards: Card[];
   /** New hero/villain-class cards awaiting a parent pick before canonizing. */

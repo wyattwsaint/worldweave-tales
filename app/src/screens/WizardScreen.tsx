@@ -6,13 +6,15 @@ import {
   resolveValue,
   type GenerateArcRequest,
   type NodeAnswers,
+  type OpenThread,
+  type Storyworld,
   type Tier,
   type WizardNode,
 } from "@wwt/domain";
 import { buildWizardAnswers, type RawWizardPicks } from "../flow/buildWizardAnswers";
 import { ProxyClient, type ProxyClientLike } from "../api/proxyClient";
 import { PROXY_URL } from "../api/config";
-import { useNav } from "../nav/NavContext";
+import { useNav, type WizardParams } from "../nav/NavContext";
 import { useTheme, type Theme } from "../theme/ThemeContext";
 import { pressedStyle } from "../theme/pressed";
 
@@ -38,9 +40,16 @@ import { pressedStyle } from "../theme/pressed";
  * hardcoded values (one-token-system tripwire enforced).
  *
  * On submit it reduces the answers to {@link RawWizardPicks} via the domain
- * assembler, stamps a fresh worldId (or, for a continued thread, the thread's
- * worldId — no thread surface exists yet, so that branch is inert), then reuses
- * the unchanged buildWizardAnswers -> ProxyClient -> Card-Pick pipeline.
+ * assembler, stamps a fresh worldId (or, when continuing, the world's own id),
+ * then reuses the unchanged buildWizardAnswers -> ProxyClient -> Card-Pick
+ * pipeline.
+ *
+ * CONTINUE MODE (#10): given a `world` param the screen becomes "the next tale
+ * in this world" — the canon questions (world/hero/villain) disappear because
+ * locked art already answers them, the world's unresolved hooks are OFFERED as
+ * optional springboards (never mandated, SPEC #24), one "what happens this time"
+ * lever takes their place, and the world itself rides along on the request so the
+ * proxy reuses its deck and honors its bible.
  *
  * The proxy client is injected (defaulting to the real {@link ProxyClient}) so
  * tests can supply a network-free fake.
@@ -50,20 +59,34 @@ const defaultClient = new ProxyClient(PROXY_URL);
 
 export default function WizardScreen({
   client = defaultClient,
+  params,
 }: {
   client?: ProxyClientLike;
+  params?: WizardParams;
 } = {}) {
   const { navigate, goHome } = useNav();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
+  // The world being continued, if any — the one thing that makes this run a
+  // continuation rather than a fresh Storyworld (#10).
+  const continuedWorld = params?.world;
+  // Only UNRESOLVED hooks are springboards: a thread a prior arc already picked
+  // up would be offered as a fresh idea forever.
+  const openThreads = useMemo(
+    () => (continuedWorld?.bible.openThreads ?? []).filter((t) => !t.resolved),
+    [continuedWorld],
+  );
+
   // A single NodeAnswers bag keyed by node id — NOT one useState per field.
-  // Seed the two required nodes so Beginner is completable in a couple of taps,
-  // and flag that no saved threads are on offer (keeps thread-pick hidden).
+  // Seed the two required nodes so Beginner is completable in a couple of taps.
+  // `__continuing` gates the canon questions (a continued world already answered
+  // them in locked art); `__hasThreads` reveals the springboard pick.
   const [answers, setAnswers] = useState<NodeAnswers>({
     tier: "beginner",
-    ageBand: "preschool",
-    __hasThreads: false,
+    ageBand: continuedWorld?.defaultAgeBand ?? "preschool",
+    __continuing: Boolean(continuedWorld),
+    __hasThreads: openThreads.length > 0,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,16 +117,18 @@ export default function WizardScreen({
     setError(null);
     try {
       const raw: RawWizardPicks = assembleRawPicks(answers);
-      // A continued thread keeps its world; a brand-new story mints a fresh id
-      // so successive stories never clobber one another (B2). No thread surface
-      // exists yet, so continueThreadId is always unset -> we always mint.
-      raw.worldId = raw.continueThreadId ? threadWorldId(raw.continueThreadId) : newWorldId();
+      // A continued arc belongs to the world it came from; a brand-new story
+      // mints a fresh id so successive stories never clobber one another (B2).
+      raw.worldId = continuedWorld ? continuedWorld.id : newWorldId();
 
       const wizardAnswers = buildWizardAnswers(raw);
       const req: GenerateArcRequest = {
         attestationToken: "dev-attestation-token",
         deviceId: "dev-device-id",
         answers: wizardAnswers,
+        // Prior canon + bible travel with the request so the proxy reuses locked
+        // cards and honors continuity (#10).
+        ...(continuedWorld ? { world: forRequest(continuedWorld) } : {}),
       };
       const response = await client.generateArc(req);
       navigate({ screen: "cardpick", params: { response, answers: wizardAnswers } });
@@ -123,10 +148,12 @@ export default function WizardScreen({
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <Text accessibilityRole="header" style={styles.title} maxFontSizeMultiplier={1.4}>
-          New Story
+          {continuedWorld ? "Next Tale" : "New Story"}
         </Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.6}>
-          A few gentle choices, then we weave the pages.
+          {continuedWorld
+            ? `A new tale in ${continuedWorld.name} — everyone you know comes along.`
+            : "A few gentle choices, then we weave the pages."}
         </Text>
 
         {busy ? (
@@ -152,6 +179,7 @@ export default function WizardScreen({
                   node={node}
                   label={labelFor(node.id)}
                   answers={answers}
+                  threads={openThreads}
                   onChange={setAnswer}
                   theme={theme}
                   styles={styles}
@@ -223,6 +251,7 @@ function NodeControl({
   node,
   label,
   answers,
+  threads,
   onChange,
   theme,
   styles,
@@ -231,6 +260,8 @@ function NodeControl({
   /** The question's human label — names the control for screen readers. */
   label: string;
   answers: NodeAnswers;
+  /** The continued world's unresolved hooks — the thread-pick node's options. */
+  threads: OpenThread[];
   onChange: (id: string, value: string | boolean | undefined) => void;
   theme: Theme;
   styles: Styles;
@@ -277,14 +308,50 @@ function NodeControl({
       );
     }
     case "thread-pick": {
-      // No saved-thread surface exists yet (app passes __hasThreads: false, so
-      // this node stays hidden). Render an inert placeholder ONLY if it ever
-      // becomes visible — no Library is built here.
+      // The springboard offer (#10 / SPEC #24): prior hooks are OFFERED, never
+      // mandated — "Not this time" is a first-class choice, and declining leaves
+      // the tale free to go anywhere within the world's canon.
+      const chosen = answers[node.id] as string | undefined;
+      if (threads.length === 0) {
+        return (
+          <View testID={node.id} style={styles.placeholder}>
+            <Text style={styles.placeholderText} maxFontSizeMultiplier={1.4}>
+              No saved threads yet.
+            </Text>
+          </View>
+        );
+      }
       return (
-        <View testID={node.id} style={styles.placeholder}>
-          <Text style={styles.placeholderText} maxFontSizeMultiplier={1.4}>
-            No saved threads yet.
-          </Text>
+        <View testID={node.id} style={styles.threadList}>
+          {threads.map((thread) => {
+            const on = chosen === thread.id;
+            return (
+              <Pressable
+                key={thread.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Continue this thread: ${thread.teaser}`}
+                accessibilityState={{ selected: on }}
+                style={pressedStyle(styles.thread, on && styles.threadOn)}
+                // Tapping the chosen thread again clears it — the offer is never sticky.
+                onPress={() => onChange(node.id, on ? undefined : thread.id)}
+              >
+                <Text style={[styles.threadText, on && styles.threadTextOn]} maxFontSizeMultiplier={1.6}>
+                  {thread.teaser}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Not this time"
+            accessibilityState={{ selected: !chosen }}
+            style={pressedStyle(styles.chip, !chosen && styles.chipOn)}
+            onPress={() => onChange(node.id, undefined)}
+          >
+            <Text style={[styles.chipText, !chosen && styles.chipTextOn]} maxFontSizeMultiplier={1.4}>
+              Not this time
+            </Text>
+          </Pressable>
         </View>
       );
     }
@@ -299,11 +366,17 @@ function newWorldId(): string {
 }
 
 /**
- * The worldId of a continued thread. There is no saved-thread surface yet, so
- * this branch is unreachable; wired for the eventual continue-a-thread flow.
+ * The world as the PROXY should see it. Locked art lives on this device: a
+ * `lockedImageRef` is a local blob path, useless server-side, so it is blanked
+ * before the world leaves the device. Everything the proxy actually needs —
+ * entityIds, appearance notes, the bible, and the locked artStyle handle —
+ * travels intact.
  */
-function threadWorldId(_continueThreadId: string): string {
-  return newWorldId();
+function forRequest(world: Storyworld): Storyworld {
+  return {
+    ...world,
+    deck: world.deck.map((card) => ({ ...card, lockedImageRef: "" })),
+  };
 }
 
 /**
@@ -312,6 +385,9 @@ function threadWorldId(_continueThreadId: string): string {
  * only: the raw id always remains the stored answer value.
  */
 function labelFor(id: string): string {
+  // A couple of nodes read better as questions than as de-camelCased ids.
+  const spoken = SPOKEN_LABELS[id];
+  if (spoken) return spoken;
   const spaced = id
     .replace(/-/g, " ")
     .replace(/([A-Z])/g, " $1")
@@ -319,6 +395,12 @@ function labelFor(id: string): string {
     .trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+/** Copy overrides for nodes whose id would read as jargon on the card. */
+const SPOKEN_LABELS: Record<string, string> = {
+  continueThread: "Pick up where you left off?",
+  newTwist: "What happens this time?",
+};
 
 /** Friendly placeholders for the well-known free-text nodes; blank otherwise. */
 function placeholderFor(id: string): string {
@@ -331,6 +413,8 @@ function placeholderFor(id: string): string {
       return "e.g. a grumpy shadow";
     case "situation":
       return "e.g. sharing when it's hard";
+    case "newTwist":
+      return "e.g. a storm traps them in the mill";
     default:
       return "";
   }
@@ -461,6 +545,22 @@ function makeStyles({ colors, type }: Theme) {
       color: colors.ink,
       backgroundColor: colors.bg,
     },
+    // The springboard offer: full-width teaser rows, since a hook is a sentence
+    // rather than a chip-sized word. Selection recolors the edge only.
+    threadList: { gap: 8 },
+    thread: {
+      minHeight: 44,
+      justifyContent: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: colors.bg,
+      borderWidth: 1.5,
+      borderColor: colors.line,
+    },
+    threadOn: { borderColor: colors.accent },
+    threadText: { ...type.entityName, color: colors.ink2 },
+    threadTextOn: { color: colors.ink },
     placeholder: {
       padding: 12,
       borderRadius: 8,

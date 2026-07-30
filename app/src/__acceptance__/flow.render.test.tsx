@@ -231,6 +231,65 @@ describe("acceptance: Wizard -> Card-Pick -> Viewer render flow", () => {
     },
   );
 
+  check(
+    "C1 [#10] a second arc continues the SAME world: canon reused, bible grown, both tales re-readable",
+    async () => {
+      // Arc 1, the ordinary way.
+      const { root } = await runFlow({ world: "Willowmere", hero: "Pip", villain: "Gloom" });
+      await act(async () => {
+        pressableByLabel(root, "‹ Shelf").props.onPress();
+      });
+
+      // Shelf -> the world's own screen. Its canon and its one tale are visible.
+      await act(async () => {
+        pressableByLabel(root, "courage").props.onPress();
+      });
+      const worldText = allText(root.root);
+      expect(worldText).toContain("The canon");
+      expect(worldText).toContain("One tale so far");
+
+      // Weave a NEXT tale in that world: no canon questions, a springboard offered.
+      await act(async () => {
+        pressableByLabel(root, "Weave a new tale").props.onPress();
+      });
+      const wizardText = allText(root.root);
+      expect(wizardText).toContain("Next Tale");
+      expect(wizardText).toContain("A tiny door in the old willow");
+      await act(async () => {
+        pressableByLabel(root, "A tiny door in the old willow").props.onPress();
+      });
+      await act(async () => {
+        await pressableByLabel(root, "Weave the tale").props.onPress();
+      });
+
+      // Every face is already drawn — nothing to pick, so Card-Pick just weaves on.
+      expect(allText(root.root)).toContain("cast is already drawn");
+      await act(async () => {
+        await pressableByLabel(root, "Weave the tale").props.onPress();
+      });
+
+      // The returning cast still has its art on the page (locked in arc 1).
+      const viewerText = allText(root.root);
+      expect(viewerText).toContain("Pip");
+
+      // ONE world on the shelf, owning BOTH arcs, with canon and bible intact.
+      const worlds = await store.listWorldSummaries();
+      expect(worlds).toHaveLength(1);
+      const saved = (await store.getWorld(worlds[0].id))!;
+      expect(saved.name).toBe("courage"); // arc 1's title stayed the shelf label
+      expect(saved.arcIds).toHaveLength(2);
+      expect(saved.deck.map((c) => c.canonName)).toContain("Pip");
+      expect(saved.bible.eventLog).toHaveLength(2);
+      expect(saved.bible.virtuesTaught).toEqual(["courage", "courage"]);
+      // The springboard the parent picked up is spent; arc 2 seeded a fresh one.
+      const threads = saved.bible.openThreads;
+      expect(threads.find((t) => t.teaser.includes("tiny door"))?.resolved).toBe(true);
+      expect(threads.some((t) => !t.resolved)).toBe(true);
+      // Both tales are re-readable from the world screen.
+      expect((await store.listArcs(saved.id)).map((a) => a.id)).toEqual(["arc-fake-2", "arc-fake-1"]);
+    },
+  );
+
   it("ZZ summary", () => {
     // eslint-disable-next-line no-console
     console.log(

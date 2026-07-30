@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { WorldSummary } from "../storage/localStore";
+import { formatKeptSince } from "../flow/keptSince";
 import { useNav } from "../nav/NavContext";
 import { blobFs, store, whenStoreReady } from "../storage/store";
 import { artImageSource } from "../storage/artSource";
@@ -18,43 +19,16 @@ import StorytimeVignette from "../components/StorytimeVignette";
  * shelf. Each story sits on its own surface card (hairline border, radius 14):
  * cover art on a 2:1 plate (radius 8) with alternating counter-rotations down
  * the shelf for the hand-placed feel, then the title and kept-since date.
- * Tapping a card fetches the full Storyworld and re-opens its most recent arc
- * in the Viewer with the exact {arc, cards, bible} params the creation path
- * passes, so the Viewer stays single-mode. Reloads on every mount — returning
- * to the shelf is always fresh. A failed open shows a warm inline error and
- * stays on the shelf. The EMPTY shelf is a composition (§1/§5): the
+ * Tapping a card opens that world's own screen — its tales and its canon (#10).
+ * The shelf itself never loads a payload: a world now owns MANY arcs, so
+ * "which arc?" is a question for the world screen, not a silent pick of the
+ * newest one. Reloads on every mount — returning to the shelf is always fresh.
+ * The EMPTY shelf is a composition (§1/§5): the
  * StorytimeVignette motif over a warm invitation to weave the first story.
  * ＋ New Story is the single accent pill — accent grounds the primary action
  * only. All color/type comes from the theme — no hardcoded values (the
  * one-token-system tripwire enforces it).
  */
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-/**
- * "2026-07-15T…" → "July 15, 2026" — warm parent-facing copy, never raw ISO
- * (§7). Slices the ISO fields directly: no date lib, and no Date.parse
- * timezone drift shifting the kept-since day.
- */
-function formatKeptSince(createdAt: string): string {
-  const year = createdAt.slice(0, 4);
-  const month = Number(createdAt.slice(5, 7));
-  const day = Number(createdAt.slice(8, 10));
-  return `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
-}
-
 export default function LibraryScreen() {
   const { navigate } = useNav();
   const theme = useTheme();
@@ -77,21 +51,6 @@ export default function LibraryScreen() {
       cancelled = true;
     };
   }, []);
-
-  async function openWorld(id: string) {
-    setError(null);
-    try {
-      // Independent reads — fetch the full world and its arcs concurrently.
-      const [world, [arc]] = await Promise.all([store.getWorld(id), store.listArcs(id)]); // arcs newest first (MVP: 1/world)
-      if (!world || !arc) throw new Error(`world ${id} has nothing to open`);
-      navigate({
-        screen: "viewer",
-        params: { arc, cards: world.deck, bible: world.bible, source: "library" },
-      });
-    } catch {
-      setError("Couldn't open that story. Try another, or weave a new one.");
-    }
-  }
 
   return (
     <View style={styles.screen}>
@@ -144,7 +103,7 @@ export default function LibraryScreen() {
               // Voices everything the card shows: the name AND the kept-since date.
               accessibilityLabel={`Open ${world.name}, kept since ${keptSince}`}
               style={pressedStyle(styles.storyCard)}
-              onPress={() => void openWorld(world.id)}
+              onPress={() => navigate({ screen: "world", params: { worldId: world.id } })}
             >
               <View style={[styles.coverArt, tilt]}>
                 {/* The card's label is the one voiced — the art stays quiet. */}

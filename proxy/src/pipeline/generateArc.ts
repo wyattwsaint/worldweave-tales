@@ -9,7 +9,8 @@ import type {
 } from "@wwt/domain";
 import { ARC_SHAPES, TIERS } from "@wwt/domain";
 import type { ImageProvider } from "../providers/imageProvider.js";
-import type { LlmProvider } from "../providers/llmProvider.js";
+import type { CanonEntry, LlmProvider } from "../providers/llmProvider.js";
+import { mergeBible } from "./bibleMerge.js";
 import {
   capNewCast,
   deriveDealtCardIds,
@@ -41,10 +42,14 @@ export async function generateArc(
 
   // 2. Author the arc in ONE call: prose-only beats PLUS a transient cast (every
   //    entity that appears — new OR reused canon — each declaring its firstBeatIndex).
+  //    Continuing a world (#10) also hands over the DECK's roster: recurring cast
+  //    is matched by exact entityId in step 3, so the model has to be told the real
+  //    ids or a returning hero comes back as a new entity and gets redrawn.
   const { beats: proseBeats, cast } = await deps.llm.writeArc({
     answers,
     shape,
     bible: world?.bible,
+    canon: canonRoster(world),
   });
 
   // 3. Resolve the cast against canon DETERMINISTICALLY (no LLM): recurring canon
@@ -113,15 +118,26 @@ export async function generateArc(
     }
   }
 
-  // 5. Update bible.
-  const bible = await deps.llm.updateBible({
+  // 5. Update bible. The arc id is minted FIRST so the bible's new event-log row
+  //    and any new open thread point at this real arc rather than a placeholder.
+  const arcId = `arc-${deps.now()}`;
+  const authoredBible = await deps.llm.updateBible({
     priorBible: world?.bible,
     beats,
     answers,
   });
+  // The model returns a whole bible; merge it onto prior canon as a DELTA so arc 4
+  // can never drop arcs 1–3, and stamp the bookkeeping we already know for sure.
+  const bible = mergeBible({
+    prior: world?.bible,
+    authored: authoredBible,
+    arcId,
+    virtueTaught: virtueOf(answers),
+    continueThreadId: answers.continueThreadId,
+  });
 
   const arc: Arc = {
-    id: `arc-${deps.now()}`,
+    id: arcId,
     worldId: answers.worldId ?? "new-world",
     tier: answers.tier,
     ageBand: answers.ageBand,
@@ -132,7 +148,30 @@ export async function generateArc(
     createdAt: deps.now(),
   };
 
-  return { arc, newCanonCards, pendingCardChoices, bible };
+  // The RESOLVED style travels back so the app can persist it: the next arc sends
+  // it here again and is drawn through the very same provider handle (SPEC #22).
+  return { arc, artStyle: { ...artStyle, providerStyleRef }, newCanonCards, pendingCardChoices, bible };
+}
+
+/**
+ * The deck's roster for the authoring model — the DECK, not the LLM-maintained
+ * bible, because the deck is what `diffCastAgainstCanon` matches against.
+ * `undefined` (not []) for a brand-new world so the prompt stays clean.
+ */
+function canonRoster(world?: Storyworld): CanonEntry[] | undefined {
+  if (!world?.deck.length) return undefined;
+  return world.deck.map(({ entityId, role, canonName, appearanceNote }) => ({
+    entityId,
+    role,
+    canonName,
+    appearanceNote,
+  }));
+}
+
+/** The lesson this arc taught, however the parent expressed it. */
+function virtueOf(answers: GenerateArcRequest["answers"]): string {
+  const tp = answers.teachingPoint;
+  return tp.kind === "virtue" ? tp.virtue : tp.description;
 }
 
 /** Beginner: auto-pick a shape not used by the world's most recent arc. */

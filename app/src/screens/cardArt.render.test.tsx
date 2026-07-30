@@ -149,6 +149,7 @@ describe("card art renders as a blob-backed <Image> (Viewer + CardPick)", () => 
       choices: {},
     };
     const response: GenerateArcResponse = {
+      artStyle: { presetId: "pencil-mvp", displayName: "Imaginative Pencil Sketch" },
       arc: {
         id: "arc-1",
         worldId: "w1",

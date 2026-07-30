@@ -6,6 +6,7 @@ import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
 import { useAppFonts } from "./src/theme/fonts";
 import { NavProvider, useNav } from "./src/nav/NavContext";
 import LibraryScreen from "./src/screens/LibraryScreen";
+import WorldScreen from "./src/screens/WorldScreen";
 import WizardScreen from "./src/screens/WizardScreen";
 import CardPickScreen from "./src/screens/CardPickScreen";
 import ViewerScreen from "./src/screens/ViewerScreen";
@@ -20,7 +21,9 @@ void SplashScreen.preventAutoHideAsync().catch(() => {});
 /**
  * App root. Wraps the hand-rolled navigator and renders the current screen.
  * Starts on the Library shelf (the home surface, #8); ＋ New Story runs
- * Wizard -> Card-Pick -> Viewer, and the Viewer's ‹ Shelf returns home.
+ * Wizard -> Card-Pick -> Viewer, and the Viewer's ‹ Shelf returns home. Tapping
+ * a saved world opens its own screen (#10), from which a new arc re-enters the
+ * same wizard in continue mode.
  *
  * `client` is an optional proxy-client seam: production leaves it undefined so
  * the wizard uses the real ProxyClient; tests inject a network-free fake.
@@ -69,8 +72,10 @@ function CurrentScreen({ client }: { client?: ProxyClientLike }) {
   switch (state.screen) {
     case "library":
       return <LibraryScreen />;
+    case "world":
+      return <WorldScreen params={state.params} />;
     case "wizard":
-      return <WizardScreen client={client} />;
+      return <WizardScreen client={client} params={state.params} />;
     case "cardpick":
       return <CardPickScreen params={state.params} />;
     case "viewer":

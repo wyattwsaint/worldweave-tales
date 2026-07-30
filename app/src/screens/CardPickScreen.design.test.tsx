@@ -114,6 +114,7 @@ const arc: Arc = {
 function cardPickParams(): CardPickParams {
   const response: GenerateArcResponse = {
     arc,
+    artStyle: { presetId: "pencil-mvp", displayName: "Imaginative Pencil Sketch" },
     newCanonCards: [],
     pendingCardChoices: [
       {

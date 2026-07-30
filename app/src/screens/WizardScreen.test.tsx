@@ -3,7 +3,11 @@ import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../../App";
 import { FakeProxyClient } from "../api/fakeProxyClient";
-import type { GenerateArcRequest } from "@wwt/domain";
+import type { GenerateArcRequest, Storyworld } from "@wwt/domain";
+import { NavProvider } from "../nav/NavContext";
+import { ThemeProvider } from "../theme/ThemeContext";
+import { sampleWorld } from "../storage/testFixtures";
+import WizardScreen from "./WizardScreen";
 
 /**
  * Focused render tests for the GENERIC, graph-driven WizardScreen.
@@ -59,6 +63,24 @@ async function mountWizard(client?: FakeProxyClient) {
   return root;
 }
 
+/**
+ * The CONTINUE path (#10): the wizard is reached from a saved world's screen, so
+ * it is mounted directly with that world as its param — the same way App wires it.
+ */
+async function mountContinueWizard(client?: FakeProxyClient, world: Storyworld = sampleWorld()) {
+  let root!: ReactTestRenderer;
+  await act(async () => {
+    root = TestRenderer.create(
+      <ThemeProvider mode="day">
+        <NavProvider>
+          <WizardScreen client={client ?? new FakeProxyClient()} params={{ world }} />
+        </NavProvider>
+      </ThemeProvider>,
+    );
+  });
+  return root;
+}
+
 describe("WizardScreen (generic graph renderer)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -106,6 +128,84 @@ describe("WizardScreen (generic graph renderer)", () => {
     const req = spy.mock.calls[0][0] as GenerateArcRequest;
     expect(req.answers.teachingPoint).toEqual({ kind: "virtue", virtue: "courage" });
     expect(allText(root.root)).toContain("Pick the Art");
+  });
+
+  it("(e) continue mode: canon questions give way to the springboard offer + one twist (#10)", async () => {
+    const root = await mountContinueWizard();
+    const text = allText(root.root);
+
+    // It reads as the NEXT tale in a world the child already knows.
+    expect(text).toContain("Next Tale");
+    expect(text).toContain("Willowmere");
+    // Locked canon already answers who everyone is.
+    expect(queryTextInput(root, "world")).toBeNull();
+    expect(queryTextInput(root, "hero")).toBeNull();
+    // In their place: the world's unresolved hook, offered, and one steering lever.
+    expect(text).toContain("What lies past the hill?");
+    expect(text).toContain("Not this time");
+    expect(queryTextInput(root, "newTwist")).toBeTruthy();
+  });
+
+  it("(f) continue mode sends the world (art refs blanked) and the chosen thread", async () => {
+    const fake = new FakeProxyClient();
+    const spy = vi.spyOn(fake, "generateArc");
+    const root = await mountContinueWizard(fake);
+
+    await act(async () => {
+      pressableByLabel(root, "What lies past the hill?").props.onPress();
+    });
+    await act(async () => {
+      queryTextInput(root, "newTwist")!.props.onChangeText("the door finally opens");
+    });
+    await act(async () => {
+      await pressableByLabel(root, "Weave the tale").props.onPress();
+    });
+
+    const req = spy.mock.calls[0][0] as GenerateArcRequest;
+    // The arc belongs to the SAME world — no fresh id, no orphaned canon.
+    expect(req.answers.worldId).toBe("world-willowmere");
+    expect(req.answers.continueThreadId).toBe("t1");
+    expect(req.answers.choices.newTwist).toBe("the door finally opens");
+    // Prior canon + bible travel so the proxy can reuse the deck...
+    expect(req.world?.deck.map((c) => c.entityId)).toEqual(["hero-1", "villain-1"]);
+    expect(req.world?.bible.eventLog).toHaveLength(1);
+    expect(req.world?.artStyle.providerStyleRef).toBe("sub:pencil-42");
+    // ...but no on-device blob path ever leaves the device.
+    expect(req.world?.deck.map((c) => c.lockedImageRef)).toEqual(["", ""]);
+  });
+
+  it("(g) declining the springboard still keeps the canon questions hidden", async () => {
+    const fake = new FakeProxyClient();
+    const spy = vi.spyOn(fake, "generateArc");
+    const root = await mountContinueWizard(fake);
+
+    await act(async () => {
+      pressableByLabel(root, "Not this time").props.onPress();
+    });
+    expect(queryTextInput(root, "world")).toBeNull();
+    expect(queryTextInput(root, "hero")).toBeNull();
+
+    await act(async () => {
+      await pressableByLabel(root, "Weave the tale").props.onPress();
+    });
+    const req = spy.mock.calls[0][0] as GenerateArcRequest;
+    expect(req.answers.continueThreadId).toBeUndefined();
+    expect(req.answers.worldId).toBe("world-willowmere"); // still the same world
+  });
+
+  it("(h) a world whose every hook is spent offers no springboard at all", async () => {
+    const world = sampleWorld({
+      bible: {
+        ...sampleWorld().bible,
+        openThreads: [{ id: "t1", teaser: "Spent already.", originArcId: "arc-1", resolved: true }],
+      },
+    });
+    const root = await mountContinueWizard(undefined, world);
+    const text = allText(root.root);
+    expect(text).not.toContain("Spent already");
+    expect(text).not.toContain("Not this time");
+    // The twist lever still stands in for the hidden canon questions.
+    expect(queryTextInput(root, "newTwist")).toBeTruthy();
   });
 
   it("(d) a Solid run with a free-text situation yields a situation teaching point (virtue default does NOT clobber)", async () => {
